@@ -2,7 +2,6 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +11,7 @@ import (
 
 	"bml/internal/browser"
 	"bml/internal/config"
+	"bml/internal/tui"
 
 	"github.com/spf13/cobra"
 )
@@ -39,8 +39,11 @@ func NewRootCmd(b browser.Browser) *cobra.Command {
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
-				// Leader mode lands here in Phase 3.
-				return errors.New("interactive mode is not implemented yet; pass a URL or key, e.g. `bml github.com` or `bml g`")
+				cfg, err := loadOrInit(cmd, configFlag)
+				if err != nil {
+					return err
+				}
+				return tui.RunLeader(b, cfg.Bookmarks)
 			}
 			return resolveAndAct(cmd, b, configFlag, args[0], newTab)
 		},
