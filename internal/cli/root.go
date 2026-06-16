@@ -19,9 +19,14 @@ import (
 // version is overridden at build time via -ldflags.
 var version = "dev"
 
-// NewRootCmd builds the root command, acting through the given Browser. The
-// Browser is injected so tests can pass a fake.
-func NewRootCmd(b browser.Browser) *cobra.Command {
+// BrowserFactory builds a Browser for the given macOS application name (empty =
+// backend default). It's injected so tests can return a fake regardless of the
+// configured browser.
+type BrowserFactory func(app string) browser.Browser
+
+// NewRootCmd builds the root command. The browser is constructed via mk from the
+// configured application name once config is known.
+func NewRootCmd(mk BrowserFactory) *cobra.Command {
 	var (
 		newTab     bool
 		configFlag string
@@ -43,9 +48,9 @@ func NewRootCmd(b browser.Browser) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return tui.RunLeader(b, cfg.Bookmarks)
+				return tui.RunLeader(mk(cfg.Browser), cfg.Bookmarks)
 			}
-			return resolveAndAct(cmd, b, configFlag, args[0], newTab)
+			return resolveAndAct(cmd, mk, configFlag, args[0], newTab)
 		},
 	}
 
@@ -61,7 +66,7 @@ func NewRootCmd(b browser.Browser) *cobra.Command {
 //   - exactly one character  → a bookmark key (errors if unbound)
 //   - contains "."           → a URL (config not required)
 //   - otherwise              → an error
-func resolveAndAct(cmd *cobra.Command, b browser.Browser, configFlag, arg string, forceNew bool) error {
+func resolveAndAct(cmd *cobra.Command, mk BrowserFactory, configFlag, arg string, forceNew bool) error {
 	if utf8.RuneCountInString(arg) == 1 {
 		cfg, err := loadOrInit(cmd, configFlag)
 		if err != nil {
@@ -71,10 +76,16 @@ func resolveAndAct(cmd *cobra.Command, b browser.Browser, configFlag, arg string
 		if !ok {
 			return fmt.Errorf("no bookmark bound to key %q", arg)
 		}
-		return b.OpenOrFocus(url, forceNew)
+		return mk(cfg.Browser).OpenOrFocus(url, forceNew)
 	}
 	if strings.Contains(arg, ".") {
-		return b.OpenOrFocus(arg, forceNew)
+		// A raw URL doesn't require a valid config; still honor the browser
+		// setting if one is readable.
+		path, err := config.Path(configFlag)
+		if err != nil {
+			return err
+		}
+		return mk(config.BrowserSetting(path)).OpenOrFocus(arg, forceNew)
 	}
 	return fmt.Errorf("%q is neither a single-character key nor a URL", arg)
 }

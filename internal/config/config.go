@@ -22,14 +22,18 @@ type Bookmark struct {
 	Tags []string `toml:"tags,omitempty"`
 }
 
-// Config is the loaded, validated bookmark collection.
+// Config is the loaded, validated bookmark collection plus settings.
 type Config struct {
+	// Browser is the macOS application name to drive (empty = backend default).
+	Browser   string
 	Bookmarks []Bookmark
 	byKey     map[string]Bookmark
 }
 
-// tomlFile mirrors the on-disk layout: an array of [[bookmark]] tables.
+// tomlFile mirrors the on-disk layout: a top-level browser setting and an array
+// of [[bookmark]] tables.
 type tomlFile struct {
+	Browser  string     `toml:"browser"`
 	Bookmark []Bookmark `toml:"bookmark"`
 }
 
@@ -45,7 +49,28 @@ func Load(path string) (*Config, error) {
 	if _, err := toml.Decode(string(data), &f); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
-	return newConfig(f.Bookmark)
+	cfg, err := newConfig(f.Bookmark)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Browser = f.Browser
+	return cfg, nil
+}
+
+// BrowserSetting reads only the browser setting from the file, tolerating a
+// missing or unreadable file by returning "" (the backend then uses its
+// default). Used by paths that act on a raw URL without requiring a full,
+// valid bookmark config.
+func BrowserSetting(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var f tomlFile
+	if _, err := toml.Decode(string(data), &f); err != nil {
+		return ""
+	}
+	return f.Browser
 }
 
 // newConfig validates bookmarks and builds the key index.
@@ -105,6 +130,10 @@ const starter = `# bml bookmarks — edit this file, then run ` + "`bml`" + ` or
 # Each bookmark needs a name and url. An optional single-character "key" binds it
 # to leader mode (press the key to focus-or-open; press the uppercase to force a
 # new tab). Optional "tags" help search find it.
+
+# Which macOS browser to drive. Any Chromium browser works:
+# "Brave Browser" (default), "Google Chrome", "Arc", "Microsoft Edge".
+# browser = "Brave Browser"
 
 [[bookmark]]
 key = "g"

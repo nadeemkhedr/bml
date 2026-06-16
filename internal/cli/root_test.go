@@ -13,7 +13,7 @@ import (
 func run(t *testing.T, args ...string) (*browser.Fake, error) {
 	t.Helper()
 	fake := &browser.Fake{}
-	cmd := NewRootCmd(fake)
+	cmd := NewRootCmd(func(string) browser.Browser { return fake })
 	cmd.SetArgs(args)
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -94,6 +94,24 @@ func TestRoot_UnboundKeyErrors(t *testing.T) {
 	}
 	if len(fake.Calls) != 0 {
 		t.Errorf("browser should not be called, got %+v", fake.Calls)
+	}
+}
+
+func TestRoot_UsesConfiguredBrowser(t *testing.T) {
+	cfg := tempConfig(t, "browser = \"Arc\"\n"+sampleConfig)
+	var gotApp string
+	cmd := NewRootCmd(func(app string) browser.Browser {
+		gotApp = app
+		return &browser.Fake{}
+	})
+	cmd.SetArgs([]string{"--config", cfg, "g"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotApp != "Arc" {
+		t.Errorf("browser app = %q, want %q", gotApp, "Arc")
 	}
 }
 

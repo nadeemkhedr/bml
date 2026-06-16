@@ -43,6 +43,35 @@ url = "https://pkg.go.dev"
 	}
 }
 
+func TestLoad_ReadsBrowserSetting(t *testing.T) {
+	cfg, err := Load(writeTemp(t, `
+browser = "Google Chrome"
+
+[[bookmark]]
+name = "X"
+url = "https://x.com"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Browser != "Google Chrome" {
+		t.Errorf("Browser = %q, want %q", cfg.Browser, "Google Chrome")
+	}
+}
+
+func TestBrowserSetting_ToleratesMissingFile(t *testing.T) {
+	if got := BrowserSetting(filepath.Join(t.TempDir(), "nope.toml")); got != "" {
+		t.Errorf("missing file should yield empty browser, got %q", got)
+	}
+}
+
+func TestBrowserSetting_ReadsValue(t *testing.T) {
+	path := writeTemp(t, "browser = \"Arc\"\n")
+	if got := BrowserSetting(path); got != "Arc" {
+		t.Errorf("BrowserSetting = %q, want %q", got, "Arc")
+	}
+}
+
 func TestLoad_DuplicateKeyErrors(t *testing.T) {
 	_, err := Load(writeTemp(t, `
 [[bookmark]]
