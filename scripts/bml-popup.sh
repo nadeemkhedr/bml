@@ -75,8 +75,10 @@ on run argv
 	end tell
 
 	-- Run bml, then close the window by exiting the shell. `clear` hides the
-	-- prompt + typed command so only bml is visible.
-	delay 0.3
+	-- prompt + typed command; the window is already centered above, so this
+	-- fires as soon as the pane can accept input (kept minimal to reduce the
+	-- moment of visible shell before bml takes over the alternate screen).
+	delay 0.05
 	tell application "Ghostty"
 		input text ("clear; " & bmlPath & "; exit") to myPane
 		send key "enter" to myPane
