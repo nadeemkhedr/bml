@@ -7,14 +7,25 @@ A macOS terminal tool for launching bookmarks. Drives a Chromium browser
 
 ### Leader mode
 The default interactive mode entered when `bml` is launched with no arguments.
-Presents a set of **favorites**, each bound to a single keypress. Pressing a
-bound key acts on that favorite's URL immediately (no Enter). Modeled on
-"leader key" launchers. Curated by hand.
+Presents **favorites** navigable by **key sequence** (which-key style): pressing
+characters drills through **groups** until a bookmark is reached, which acts
+immediately (no Enter). Modeled on "leader key" launchers. Curated by hand.
 
 ### Bookmark
 A stored URL entry — the single core entity. All bookmarks live in one flat
 list. A bookmark may optionally carry a **key**, which promotes it into
 **leader mode**. Every bookmark (keyed or not) is reachable via **search mode**.
+
+### Key (key sequence)
+A bookmark's optional leader binding: 1–3 characters typed in turn (e.g. `g` or
+`wt`). A multi-character key navigates through **groups**. Keys are
+**prefix-free** — no key may be a strict prefix of another — so navigation is
+unambiguous and a key is never both a bookmark and a group.
+
+### Group
+A key **prefix** that holds further keys (e.g. `w` for the keys `wt`, `wc`).
+Groups are implied by prefixes; an optional **group label** gives the prefix a
+friendly name in the menu (e.g. `w` → "Work"). Not a stored entity itself.
 
 ### Favorite
 Not a separate entity — a **favorite** is simply a bookmark that carries a
@@ -28,8 +39,8 @@ bookmarks (matching name, URL, and tags) and acts on the chosen one.
 Taking action on a URL either **focuses** an already-open browser tab or
 **opens** a new tab. "Focus" finds an existing tab by **substring match**
 (scheme-insensitive) on the tab's URL; if none matches, a new tab opens.
-A "force new tab" path (uppercase key, or `-n/--new-tab`) skips the match and
-always opens. This single routine backs leader mode, search mode, and the
+A "force new tab" path (uppercase final key, or `-n/--new-tab`) skips the match
+and always opens. This single routine backs leader mode, search mode, and the
 `bml <arg>` CLI path. The actual automation is delegated to a **browser
 backend**.
 

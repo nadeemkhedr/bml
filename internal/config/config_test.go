@@ -101,15 +101,50 @@ func TestLoad_MissingFieldsError(t *testing.T) {
 	}
 }
 
-func TestLoad_MultiCharKeyErrors(t *testing.T) {
+func TestLoad_AcceptsMultiCharKey(t *testing.T) {
+	cfg, err := Load(writeTemp(t, `
+[[bookmark]]
+key = "wt"
+name = "Work Tasks"
+url = "https://tasks.example"
+`))
+	if err != nil {
+		t.Fatalf("multi-char key should be valid: %v", err)
+	}
+	if url, ok := cfg.URLForKey("wt"); !ok || url != "https://tasks.example" {
+		t.Errorf("URLForKey(wt) = %q, %v", url, ok)
+	}
+}
+
+func TestLoad_KeyTooLongErrors(t *testing.T) {
 	_, err := Load(writeTemp(t, `
 [[bookmark]]
-key = "gh"
-name = "GitHub"
-url = "https://github.com"
+key = "wxyz"
+name = "Too Long"
+url = "https://x.com"
 `))
 	if err == nil {
-		t.Fatal("expected error for multi-character key")
+		t.Fatal("expected error for a 4-character key")
+	}
+}
+
+func TestLoad_PrefixFreeViolationErrors(t *testing.T) {
+	_, err := Load(writeTemp(t, `
+[[bookmark]]
+key = "w"
+name = "Work"
+url = "https://w.example"
+
+[[bookmark]]
+key = "wt"
+name = "Work Tasks"
+url = "https://wt.example"
+`))
+	if err == nil {
+		t.Fatal("expected error: 'w' is a prefix of 'wt'")
+	}
+	if !strings.Contains(err.Error(), "prefix") {
+		t.Errorf("error should explain the prefix conflict, got %q", err)
 	}
 }
 
@@ -186,6 +221,27 @@ func TestRenderSave_RoundTrip(t *testing.T) {
 	}
 	if !strings.HasSuffix(backup, ".bak") {
 		t.Errorf("backup path = %q", backup)
+	}
+}
+
+func TestRenderSave_PreservesGroups(t *testing.T) {
+	cfg := &Config{
+		Groups:    []Group{{Key: "w", Name: "Work"}},
+		Bookmarks: []Bookmark{{Key: "wt", Name: "Work Tasks", URL: "https://tasks.example"}},
+	}
+	path := filepath.Join(t.TempDir(), "out.toml")
+	if _, err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("does not load: %v", err)
+	}
+	if name, ok := got.GroupName("w"); !ok || name != "Work" {
+		t.Errorf("group label not preserved: %q %v", name, ok)
+	}
+	if _, ok := got.URLForKey("wt"); !ok {
+		t.Error("grouped bookmark not preserved")
 	}
 }
 

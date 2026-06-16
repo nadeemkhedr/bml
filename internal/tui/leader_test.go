@@ -19,7 +19,7 @@ func bookmarks() []config.Bookmark {
 
 func newModel() (Leader, *browser.Fake) {
 	fake := &browser.Fake{}
-	return NewLeader(fake, bookmarks()), fake
+	return NewLeader(fake, bookmarks(), nil), fake
 }
 
 // runes builds a KeyMsg for typed characters.
@@ -113,7 +113,7 @@ func TestLeader_QuitKeys(t *testing.T) {
 
 func TestLeader_BoundQuitKeyActsInsteadOfQuitting(t *testing.T) {
 	fake := &browser.Fake{}
-	m := NewLeader(fake, []config.Bookmark{{Key: "q", Name: "Queue", URL: "https://q.example"}})
+	m := NewLeader(fake, []config.Bookmark{{Key: "q", Name: "Queue", URL: "https://q.example"}}, nil)
 	_, msg := press(t, m, runes("q"))
 	if _, ok := msg.(actedMsg); !ok {
 		t.Errorf("a bookmark bound to q should act, not quit; got %#v", msg)

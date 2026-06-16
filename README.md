@@ -61,11 +61,22 @@ TOML, hand-edited, at `~/.config/bml/bookmarks.toml` (override with `--config` o
 # Optional: which macOS browser to drive (default "Brave Browser").
 # browser = "Google Chrome"
 
+# Optional: give a key-group prefix a friendly name in the menu.
+[[group]]
+key = "w"
+name = "Work"
+
 [[bookmark]]
-key = "g"            # optional single-character leader key
+key = "g"            # optional 1–3 char leader key
 name = "GitHub"
 url = "https://github.com"
 tags = ["dev"]       # optional; searchable
+
+[[bookmark]]
+key = "wt"           # grouped: press "w" then "t"
+name = "Work Tasks"
+url = "https://app.clickup.com"
+tags = ["work"]
 
 [[bookmark]]
 name = "Go docs"     # no key → not in the launcher, but still searchable
@@ -74,9 +85,10 @@ tags = ["dev", "reference"]
 ```
 
 - A bookmark needs a **name** and **url**.
-- An optional single-character **key** binds it to the launcher (leader mode).
-- Duplicate keys are rejected with an error — bml won't start with an ambiguous
-  config.
+- An optional **key** (1–3 characters) binds it to the launcher. Multi-character
+  keys form **groups**: `wt` means press `w` (opens the Work group) then `t`.
+- Keys are **prefix-free** — a key can't be both a bookmark and a group prefix
+  (no `w` *and* `wt`). Duplicate or conflicting keys are rejected on load.
 
 ## Usage
 
@@ -84,10 +96,12 @@ tags = ["dev", "reference"]
 
 | Key            | Action                                            |
 | -------------- | ------------------------------------------------- |
-| `g` (a letter) | Focus an existing tab for that bookmark, else open |
-| `G` (Shift)    | Force a new tab                                   |
+| `g` (a key)    | Focus an existing tab for that bookmark, else open |
+| `w` then `t`   | Navigate a group, then act (`wt`)                 |
+| Uppercase last | Force a new tab (`G`, or `wT`)                    |
+| `Backspace`    | Go up one group level                             |
 | `/`            | Enter search                                      |
-| `q` / `Esc` / `Ctrl-C` | Quit                                      |
+| `q` / `Esc` / `Ctrl-C` | Quit (`Esc` first leaves the current group) |
 
 ### Search — `/`
 
@@ -98,11 +112,15 @@ to move, `Enter` to focus/open, `Esc` to go back.
 
 ```sh
 bml g                 # act on the bookmark bound to key "g"
+bml wt                # act on a grouped key sequence
 bml github.com        # act on a URL (scheme optional)
 bml -n github.com     # force a new tab
-bml -n g              # force a new tab for a keyed bookmark
+bml -n wt             # force a new tab for a keyed bookmark
 bml edit              # open the bookmarks file in $EDITOR
 ```
+
+A 1–3 character argument with no `.` is a **key sequence**; an argument with a
+`.` is a **URL**; anything else errors.
 
 ### Importing bookmarks
 

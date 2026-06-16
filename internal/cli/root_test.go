@@ -37,6 +37,17 @@ name = "GitHub"
 url = "https://github.com"
 `
 
+const groupedConfig = `
+[[group]]
+key = "w"
+name = "Work"
+
+[[bookmark]]
+key = "wt"
+name = "Work Tasks"
+url = "https://tasks.example"
+`
+
 func TestRoot_URLArgFocuses(t *testing.T) {
 	fake, err := run(t, "github.com")
 	if err != nil {
@@ -115,10 +126,43 @@ func TestRoot_UsesConfiguredBrowser(t *testing.T) {
 	}
 }
 
-func TestRoot_NonURLArgErrors(t *testing.T) {
-	fake, err := run(t, "github")
+func TestRoot_KeySequenceResolves(t *testing.T) {
+	cfg := tempConfig(t, groupedConfig)
+	fake, err := run(t, "--config", cfg, "wt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if last, _ := fake.Last(); last.URL != "https://tasks.example" || last.ForceNew {
+		t.Errorf("got %+v, want {https://tasks.example false}", last)
+	}
+}
+
+func TestRoot_KeySequenceWithNewTab(t *testing.T) {
+	cfg := tempConfig(t, groupedConfig)
+	fake, err := run(t, "--config", cfg, "-n", "wt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if last, _ := fake.Last(); !last.ForceNew {
+		t.Errorf("expected ForceNew, got %+v", last)
+	}
+}
+
+func TestRoot_GroupPrefixAloneErrors(t *testing.T) {
+	cfg := tempConfig(t, groupedConfig)
+	fake, err := run(t, "--config", cfg, "w") // a group, not a bookmark
 	if err == nil {
-		t.Fatal("expected an error for a non-URL, non-dotted argument")
+		t.Fatal("expected an error: 'w' is a group prefix, not a bookmark")
+	}
+	if len(fake.Calls) != 0 {
+		t.Errorf("browser should not be called, got %+v", fake.Calls)
+	}
+}
+
+func TestRoot_NonURLArgErrors(t *testing.T) {
+	fake, err := run(t, "github") // 6 chars, no dot
+	if err == nil {
+		t.Fatal("expected an error for a long non-URL argument")
 	}
 	if len(fake.Calls) != 0 {
 		t.Errorf("browser should not be called on a resolution error, got %+v", fake.Calls)

@@ -10,7 +10,7 @@ import (
 
 func newSearch() (Search, *browser.Fake) {
 	fake := &browser.Fake{}
-	return NewSearch(fake, corpus()), fake
+	return NewSearch(fake, corpus(), nil), fake
 }
 
 // typeQuery feeds each rune of s to the model, returning the updated model.

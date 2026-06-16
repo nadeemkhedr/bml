@@ -49,7 +49,7 @@ func NewRootCmd(mk BrowserFactory) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return tui.RunLeader(mk(cfg.Browser), cfg.Bookmarks)
+				return tui.RunLeader(mk(cfg.Browser), cfg.Bookmarks, cfg.Groups)
 			}
 			return resolveAndAct(cmd, mk, configFlag, args[0], newTab)
 		},
@@ -65,11 +65,11 @@ func NewRootCmd(mk BrowserFactory) *cobra.Command {
 
 // resolveAndAct turns a positional argument into a URL and acts on it.
 //
-//   - exactly one character  → a bookmark key (errors if unbound)
-//   - contains "."           → a URL (config not required)
-//   - otherwise              → an error
+//   - 1–3 characters, no "."  → a bookmark key sequence (errors if unbound)
+//   - contains "."            → a URL (config not required)
+//   - otherwise               → an error
 func resolveAndAct(cmd *cobra.Command, mk BrowserFactory, configFlag, arg string, forceNew bool) error {
-	if utf8.RuneCountInString(arg) == 1 {
+	if n := utf8.RuneCountInString(arg); n >= 1 && n <= 3 && !strings.Contains(arg, ".") {
 		cfg, err := loadOrInit(cmd, configFlag)
 		if err != nil {
 			return err
@@ -89,7 +89,7 @@ func resolveAndAct(cmd *cobra.Command, mk BrowserFactory, configFlag, arg string
 		}
 		return mk(config.BrowserSetting(path)).OpenOrFocus(arg, forceNew)
 	}
-	return fmt.Errorf("%q is neither a single-character key nor a URL", arg)
+	return fmt.Errorf("%q is neither a key (1–3 chars) nor a URL", arg)
 }
 
 // loadOrInit resolves the config path, writing a starter file on first run, then

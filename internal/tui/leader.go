@@ -1,8 +1,9 @@
-// Package tui holds bml's interactive Bubble Tea models: leader mode and (later)
-// search mode.
+// Package tui holds bml's interactive Bubble Tea models: leader mode and search
+// mode.
 package tui
 
 import (
+	"sort"
 	"strings"
 	"unicode"
 
@@ -25,32 +26,45 @@ func act(b browser.Browser, url string, forceNew bool) tea.Cmd {
 }
 
 type favorite struct {
-	key, name, url string
+	key, name, url string // key is the full lowercased sequence, e.g. "wt"
 	tags           []string
 }
 
-// Leader is the which-key launcher shown when bml starts with no argument.
+// Leader is the which-key launcher shown when bml starts with no argument. Keys
+// are 1–3 character sequences; pressing characters navigates through groups
+// until a bookmark is reached.
 type Leader struct {
 	browser   browser.Browser
 	all       []config.Bookmark // full list, handed to search mode
+	groups    []config.Group
 	favorites []favorite
 	byKey     map[string]favorite
-	err       error // set when an act fails; surfaced by the caller after exit
+	groupName map[string]string
+	prefix    string // characters typed so far at the current depth
+	err       error
 	quitting  bool
 }
 
-// NewLeader builds the leader model from the bookmark list, keeping only the
-// keyed bookmarks (favorites) in config order for display while retaining the
-// full list for search mode.
-func NewLeader(b browser.Browser, bookmarks []config.Bookmark) Leader {
-	m := Leader{browser: b, all: bookmarks, byKey: make(map[string]favorite)}
+// NewLeader builds the leader model from the bookmark list (keyed bookmarks
+// become navigable favorites) and the optional group labels.
+func NewLeader(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group) Leader {
+	m := Leader{
+		browser:   b,
+		all:       bookmarks,
+		groups:    groups,
+		byKey:     make(map[string]favorite),
+		groupName: make(map[string]string),
+	}
 	for _, bm := range bookmarks {
 		if bm.Key == "" {
 			continue
 		}
-		f := favorite{key: bm.Key, name: bm.Name, url: bm.URL, tags: bm.Tags}
+		f := favorite{key: strings.ToLower(bm.Key), name: bm.Name, url: bm.URL, tags: bm.Tags}
 		m.favorites = append(m.favorites, f)
-		m.byKey[bm.Key] = f
+		m.byKey[f.key] = f
+	}
+	for _, g := range groups {
+		m.groupName[strings.ToLower(g.Key)] = g.Name
 	}
 	return m
 }
@@ -60,9 +74,6 @@ func (m Leader) Err() error { return m.err }
 
 func (m Leader) Init() tea.Cmd { return nil }
 
-// Update handles key input. Resolution order on a rune: exact key match (focus),
-// then uppercase-of-a-key (force new tab), then the quit/search shortcuts. Exact
-// matches win so a bookmark bound to "q" or "/" still works.
 func (m Leader) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case actedMsg:
@@ -72,9 +83,21 @@ func (m Leader) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyEsc:
+		case tea.KeyCtrlC:
 			m.quitting = true
 			return m, tea.Quit
+		case tea.KeyEsc:
+			if m.prefix != "" {
+				m.prefix = "" // back to the top level
+				return m, nil
+			}
+			m.quitting = true
+			return m, tea.Quit
+		case tea.KeyBackspace:
+			if r := []rune(m.prefix); len(r) > 0 {
+				m.prefix = string(r[:len(r)-1])
+			}
+			return m, nil
 		case tea.KeyRunes:
 			return m.handleRune(string(msg.Runes))
 		}
@@ -82,26 +105,45 @@ func (m Leader) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleRune advances navigation by one character. A completed key sequence acts
+// (uppercase last char forces a new tab); a group prefix descends; an unmatched
+// character only triggers quit/search at the top level.
 func (m Leader) handleRune(s string) (tea.Model, tea.Cmd) {
-	// Exact key → focus-or-open.
-	if f, ok := m.byKey[s]; ok {
-		return m, act(m.browser, f.url, false)
+	if len([]rune(s)) != 1 {
+		return m, nil
 	}
-	// Uppercase of a bound letter → force a new tab.
-	if isUpper(s) {
-		if f, ok := m.byKey[strings.ToLower(s)]; ok {
-			return m, act(m.browser, f.url, true)
+	next := m.prefix + strings.ToLower(s)
+
+	if f, ok := m.byKey[next]; ok {
+		// Prefix-free config guarantees this is the unique completion.
+		return m, act(m.browser, f.url, isUpper(s))
+	}
+	if m.hasPrefix(next) {
+		m.prefix = next // descend into the group
+		return m, nil
+	}
+
+	if m.prefix == "" {
+		switch s {
+		case "q":
+			m.quitting = true
+			return m, tea.Quit
+		case "/":
+			search := NewSearch(m.browser, m.all, m.groups)
+			return search, search.Init()
 		}
 	}
-	switch s {
-	case "q":
-		m.quitting = true
-		return m, tea.Quit
-	case "/":
-		search := NewSearch(m.browser, m.all)
-		return search, search.Init()
+	return m, nil // stray key inside a group — ignore
+}
+
+// hasPrefix reports whether any key starts with p (and is longer than it).
+func (m Leader) hasPrefix(p string) bool {
+	for _, f := range m.favorites {
+		if len(f.key) > len(p) && strings.HasPrefix(f.key, p) {
+			return true
+		}
 	}
-	return m, nil
+	return false
 }
 
 func isUpper(s string) bool {
@@ -109,21 +151,93 @@ func isUpper(s string) bool {
 	return len(r) == 1 && unicode.IsUpper(r[0])
 }
 
+// child is one entry in the menu at the current depth: either a bookmark (leaf)
+// or a group to descend into.
+type child struct {
+	ch    string
+	leaf  bool
+	name  string
+	tags  []string
+}
+
+// children returns the menu items reachable by one more keystroke from prefix.
+func (m Leader) children() []child {
+	plen := len([]rune(m.prefix))
+	seen := make(map[string]bool)
+	var out []child
+	for _, f := range m.favorites {
+		kr := []rune(f.key)
+		if !strings.HasPrefix(f.key, m.prefix) || len(kr) <= plen {
+			continue
+		}
+		ch := string(kr[plen])
+		if seen[ch] {
+			continue
+		}
+		seen[ch] = true
+		full := m.prefix + ch
+		if bm, ok := m.byKey[full]; ok {
+			out = append(out, child{ch: ch, leaf: true, name: bm.name, tags: bm.tags})
+		} else {
+			out = append(out, child{ch: ch, name: m.groupName[full]})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ch < out[j].ch })
+	return out
+}
+
+// breadcrumb describes the current group path for the header.
+func (m Leader) breadcrumb() string {
+	if m.prefix == "" {
+		return "launcher"
+	}
+	var parts []string
+	r := []rune(m.prefix)
+	for i := 1; i <= len(r); i++ {
+		p := string(r[:i])
+		if name, ok := m.groupName[p]; ok {
+			parts = append(parts, name)
+		} else {
+			parts = append(parts, p)
+		}
+	}
+	return strings.Join(parts, " / ")
+}
+
 func (m Leader) View() string {
 	if m.quitting {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString(header("launcher") + "\n\n")
-	if len(m.favorites) == 0 {
+	b.WriteString(header(m.breadcrumb()) + "\n\n")
+
+	kids := m.children()
+	if len(kids) == 0 {
 		b.WriteString(hintStyle.Render("  no favorites yet — add a key to a bookmark in `bml edit`") + "\n\n")
 	}
-	for _, f := range m.favorites {
-		b.WriteString("  " + keyBadge.Render(f.key) + "  " + nameStyle.Render(f.name))
-		b.WriteString(renderTags(f.tags) + "\n")
+	for _, c := range kids {
+		b.WriteString("  " + keyBadge.Render(c.ch) + "  ")
+		if c.leaf {
+			b.WriteString(nameStyle.Render(c.name) + renderTags(c.tags))
+		} else {
+			label := c.name
+			if label == "" {
+				label = "group"
+			}
+			b.WriteString(nameStyle.Render(label) + " " + groupArrow.Render("›"))
+		}
+		b.WriteString("\n")
 	}
-	b.WriteString("\n" + hintStyle.Render("  Shift+key  new tab   ·   /  search   ·   q  quit") + "\n")
+
+	b.WriteString("\n" + hintStyle.Render(m.footer()) + "\n")
 	return b.String()
+}
+
+func (m Leader) footer() string {
+	if m.prefix == "" {
+		return "  Shift+key  new tab   ·   /  search   ·   q  quit"
+	}
+	return "  Shift+key  new tab   ·   ⌫  back   ·   esc  top"
 }
 
 // errer is implemented by both leader and search models so the runner can
@@ -132,8 +246,8 @@ type errer interface{ Err() error }
 
 // RunLeader runs the interactive program (starting in leader mode) and returns
 // any error from acting on a bookmark.
-func RunLeader(b browser.Browser, bookmarks []config.Bookmark) error {
-	final, err := tea.NewProgram(NewLeader(b, bookmarks)).Run()
+func RunLeader(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group) error {
+	final, err := tea.NewProgram(NewLeader(b, bookmarks, groups)).Run()
 	if err != nil {
 		return err
 	}

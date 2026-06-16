@@ -20,6 +20,7 @@ const maxVisible = 10
 type Search struct {
 	browser  browser.Browser
 	all      []config.Bookmark
+	groups   []config.Group
 	input    textinput.Model
 	results  []Result
 	cursor   int
@@ -29,13 +30,13 @@ type Search struct {
 }
 
 // NewSearch builds the search model over the full bookmark list.
-func NewSearch(b browser.Browser, bookmarks []config.Bookmark) Search {
+func NewSearch(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group) Search {
 	in := textinput.New()
 	in.Placeholder = "search bookmarks…"
 	in.Prompt = ""
 	in.Focus()
 
-	m := Search{browser: b, all: bookmarks, input: in}
+	m := Search{browser: b, all: bookmarks, groups: groups, input: in}
 	m.results = Filter(bookmarks, "")
 	return m
 }
@@ -59,7 +60,7 @@ func (m Search) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case tea.KeyEsc:
 			// Back to leader mode.
-			return NewLeader(m.browser, m.all), nil
+			return NewLeader(m.browser, m.all, m.groups), nil
 		case tea.KeyEnter:
 			if len(m.results) > 0 {
 				return m, act(m.browser, m.results[m.cursor].Bookmark.URL, false)
