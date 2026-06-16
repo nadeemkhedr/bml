@@ -126,6 +126,69 @@ func TestLoad_InvalidTOMLErrors(t *testing.T) {
 	}
 }
 
+func TestAppend_MergesByURLPreservingExisting(t *testing.T) {
+	cfg, err := Load(writeTemp(t, `
+[[bookmark]]
+key = "g"
+name = "GitHub"
+url = "https://github.com"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	added := cfg.Append([]Bookmark{
+		{Name: "GitHub dup", URL: "https://github.com"}, // already present → skipped
+		{Name: "Go", URL: "https://go.dev"},             // new
+	})
+	if added != 1 {
+		t.Errorf("added = %d, want 1", added)
+	}
+	if len(cfg.Bookmarks) != 2 {
+		t.Fatalf("total = %d, want 2", len(cfg.Bookmarks))
+	}
+	if cfg.Bookmarks[0].Key != "g" {
+		t.Error("existing keyed bookmark should be preserved")
+	}
+}
+
+func TestRenderSave_RoundTrip(t *testing.T) {
+	cfg := &Config{
+		Browser: "Arc",
+		Bookmarks: []Bookmark{
+			{Key: "g", Name: "GitHub", URL: "https://github.com", Tags: []string{"dev"}},
+			{Name: `Quote " and \ slash`, URL: "https://example.com"},
+		},
+	}
+	path := filepath.Join(t.TempDir(), "out.toml")
+
+	if backup, err := Save(path, cfg); err != nil || backup != "" {
+		t.Fatalf("first Save: backup=%q err=%v", backup, err)
+	}
+
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("rendered config does not load: %v", err)
+	}
+	if got.Browser != "Arc" || len(got.Bookmarks) != 2 {
+		t.Fatalf("round-trip mismatch: %+v", got)
+	}
+	if got.Bookmarks[1].Name != `Quote " and \ slash` {
+		t.Errorf("special characters not preserved: %q", got.Bookmarks[1].Name)
+	}
+	if url, ok := got.URLForKey("g"); !ok || url != "https://github.com" {
+		t.Errorf("key not preserved through round-trip")
+	}
+
+	// Second save backs up the existing file.
+	backup, err := Save(path, cfg)
+	if err != nil || backup == "" {
+		t.Fatalf("second Save should back up: backup=%q err=%v", backup, err)
+	}
+	if !strings.HasSuffix(backup, ".bak") {
+		t.Errorf("backup path = %q", backup)
+	}
+}
+
 func TestPath_Precedence(t *testing.T) {
 	t.Setenv("BML_CONFIG", "")
 	t.Setenv("XDG_CONFIG_HOME", "")

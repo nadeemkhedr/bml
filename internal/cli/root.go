@@ -11,6 +11,7 @@ import (
 
 	"bml/internal/browser"
 	"bml/internal/config"
+	"bml/internal/importer"
 	"bml/internal/tui"
 
 	"github.com/spf13/cobra"
@@ -58,6 +59,7 @@ func NewRootCmd(mk BrowserFactory) *cobra.Command {
 	cmd.PersistentFlags().StringVar(&configFlag, "config", "", "path to the bookmark file (default ~/.config/bml/bookmarks.toml)")
 
 	cmd.AddCommand(newEditCmd(&configFlag))
+	cmd.AddCommand(newImportCmd(&configFlag))
 	return cmd
 }
 
@@ -126,6 +128,83 @@ func newEditCmd(configFlag *string) *cobra.Command {
 			return openEditor(cmd, path)
 		},
 	}
+}
+
+// newImportCmd imports bookmarks from a Chromium browser into the config,
+// merging by URL (preserving existing keyed favorites) unless --replace.
+func newImportCmd(configFlag *string) *cobra.Command {
+	var (
+		profile string
+		replace bool
+		dryRun  bool
+	)
+	cmd := &cobra.Command{
+		Use:   "import <browser>",
+		Short: "import bookmarks from a Chromium browser",
+		Long: "Import bookmarks from a Chromium-based browser (" +
+			strings.Join(importer.SupportedNames(), ", ") + "). Folder names become " +
+			"tags. By default new bookmarks are merged in (existing entries and their " +
+			"keys are kept); use --replace to overwrite.",
+		Args:          cobra.ExactArgs(1),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			src, ok := importer.Lookup(args[0])
+			if !ok {
+				return fmt.Errorf("unknown browser %q; supported: %s", args[0], strings.Join(importer.SupportedNames(), ", "))
+			}
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return err
+			}
+			imported, err := importer.Read(home, profile, src)
+			if err != nil {
+				return err
+			}
+
+			path, err := config.Path(*configFlag)
+			if err != nil {
+				return err
+			}
+
+			cfg := &config.Config{}
+			if replace {
+				cfg.Browser = config.BrowserSetting(path) // keep the browser setting
+			} else if existing, err := config.Load(path); err == nil {
+				cfg = existing
+			} else if !os.IsNotExist(err) {
+				return err // an existing-but-broken config shouldn't be silently clobbered
+			}
+
+			added := cfg.Append(imported)
+
+			if dryRun {
+				text, err := config.Render(cfg)
+				if err != nil {
+					return err
+				}
+				fmt.Fprint(cmd.OutOrStdout(), text)
+				fmt.Fprintf(cmd.ErrOrStderr(), "# dry run: %d new of %d from %s, %d total (not written)\n",
+					added, len(imported), src.App, len(cfg.Bookmarks))
+				return nil
+			}
+
+			backup, err := config.Save(path, cfg)
+			if err != nil {
+				return err
+			}
+			if backup != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "backed up previous config to %s\n", backup)
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "imported %d new bookmark(s) from %s — %d total → %s\n",
+				added, src.App, len(cfg.Bookmarks), path)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&profile, "profile", "Default", "browser profile directory")
+	cmd.Flags().BoolVar(&replace, "replace", false, "replace existing bookmarks instead of merging")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the resulting config to stdout without writing")
+	return cmd
 }
 
 func openEditor(cmd *cobra.Command, path string) error {

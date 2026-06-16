@@ -6,6 +6,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,7 +34,7 @@ type Config struct {
 // tomlFile mirrors the on-disk layout: a top-level browser setting and an array
 // of [[bookmark]] tables.
 type tomlFile struct {
-	Browser  string     `toml:"browser"`
+	Browser  string     `toml:"browser,omitempty"`
 	Bookmark []Bookmark `toml:"bookmark"`
 }
 
@@ -94,6 +95,63 @@ func newConfig(bookmarks []Bookmark) (*Config, error) {
 		}
 	}
 	return &Config{Bookmarks: bookmarks, byKey: byKey}, nil
+}
+
+// Append adds bookmarks whose URL is not already present, preserving existing
+// entries (and their keys). Returns the number actually added.
+func (c *Config) Append(bms []Bookmark) int {
+	have := make(map[string]bool, len(c.Bookmarks))
+	for _, b := range c.Bookmarks {
+		have[b.URL] = true
+	}
+	added := 0
+	for _, b := range bms {
+		if have[b.URL] {
+			continue
+		}
+		have[b.URL] = true
+		c.Bookmarks = append(c.Bookmarks, b)
+		added++
+	}
+	return added
+}
+
+// renderHeader tops every machine-written config.
+const renderHeader = `# bml bookmarks — add ` + "`key = \"x\"`" + ` to any bookmark to pin it to the launcher.
+# Updated by ` + "`bml import`" + `; safe to hand-edit.
+
+`
+
+// Render serializes a config to TOML text (with a header comment).
+func Render(c *Config) (string, error) {
+	var buf bytes.Buffer
+	buf.WriteString(renderHeader)
+	if err := toml.NewEncoder(&buf).Encode(tomlFile{Browser: c.Browser, Bookmark: c.Bookmarks}); err != nil {
+		return "", fmt.Errorf("encoding config: %w", err)
+	}
+	return buf.String(), nil
+}
+
+// Save writes the config to path, backing up any existing file to "<path>.bak".
+// It returns the backup path ("" if there was nothing to back up).
+func Save(path string, c *Config) (backup string, err error) {
+	text, err := Render(c)
+	if err != nil {
+		return "", err
+	}
+	if existing, err := os.ReadFile(path); err == nil {
+		backup = path + ".bak"
+		if err := os.WriteFile(backup, existing, 0o644); err != nil {
+			return "", fmt.Errorf("writing backup: %w", err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		return "", err
+	}
+	return backup, nil
 }
 
 // URLForKey returns the URL bound to a single-character key.

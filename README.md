@@ -104,6 +104,22 @@ bml -n g              # force a new tab for a keyed bookmark
 bml edit              # open the bookmarks file in $EDITOR
 ```
 
+### Importing bookmarks
+
+Import from a Chromium-based browser (`brave`, `chrome`, `edge`). Folder names
+become tags. New bookmarks are **merged** in — existing entries and their keys
+are kept — so it's safe to re-run.
+
+```sh
+bml import brave                 # merge Brave's Default profile into your config
+bml import chrome --profile "Profile 1"
+bml import brave --dry-run       # preview the result without writing
+bml import brave --replace       # overwrite instead of merging
+```
+
+Imported bookmarks have no leader key — add `key = "x"` to the ones you want in
+the launcher. The previous config is backed up to `<file>.bak` on each write.
+
 A single-character argument is treated as a **key**; a multi-character argument
 must contain a `.` to be treated as a **URL** (otherwise it's an error).
 
