@@ -114,8 +114,13 @@ func TestLeader_QuitKeys(t *testing.T) {
 
 func TestLeader_ShowTagsTogglesTagDisplay(t *testing.T) {
 	bms := []config.Bookmark{{Key: "g", Name: "GitHub", URL: "https://github.com", Tags: []string{"devtag"}}}
-	with := NewLeader(&browser.Fake{}, bms, nil, true).View()
-	without := NewLeader(&browser.Fake{}, bms, nil, false).View()
+	sized := func(showTags bool) string {
+		m := NewLeader(&browser.Fake{}, bms, nil, showTags)
+		next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+		return next.(Leader).View()
+	}
+	with := sized(true)
+	without := sized(false)
 	if !strings.Contains(with, "devtag") {
 		t.Error("tags should appear in leader mode when showTags is true")
 	}

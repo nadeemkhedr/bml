@@ -144,6 +144,24 @@ the launcher. The previous config is backed up to `<file>.bak` on each write.
 A single-character argument is treated as a **key**; a multi-character argument
 must contain a `.` to be treated as a **URL** (otherwise it's an error).
 
+## Global popup (Ghostty)
+
+`scripts/bml-popup.sh` opens bml as a small, centered popup window in
+[Ghostty](https://ghostty.org), driven entirely through Ghostty's AppleScript
+API (no `ghostty` CLI / `PATH` dependency). Bind it to a global shortcut
+(Raycast, Karabiner, skhd, macOS Shortcuts, …) to launch bml from anywhere; pick
+a bookmark and the window closes itself.
+
+```sh
+scripts/bml-popup.sh
+# size in pixels: BML_POPUP_WIDTH / BML_POPUP_HEIGHT
+# bml location:   BML=/path/to/bml
+```
+
+The script opens a normal Ghostty window, centers it (via System Events — so the
+runner needs **Accessibility** permission), and types `bml; exit` so the window
+closes cleanly on exit. Requires bml on disk (default `/usr/local/bin/bml`).
+
 ## How "focus existing tab" works
 
 bml drives the browser with AppleScript. It looks for an open tab whose URL

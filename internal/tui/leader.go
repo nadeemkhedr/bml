@@ -40,10 +40,11 @@ type Leader struct {
 	showTags  bool
 	favorites []favorite
 	byKey     map[string]favorite
-	groupName map[string]string
-	prefix    string // characters typed so far at the current depth
-	err       error
-	quitting  bool
+	groupName     map[string]string
+	prefix        string // characters typed so far at the current depth
+	width, height int
+	err           error
+	quitting      bool
 }
 
 // NewLeader builds the leader model from the bookmark list (keyed bookmarks
@@ -83,6 +84,10 @@ func (m Leader) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		m.quitting = true
 		return m, tea.Quit
+
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		return m, nil
 
 	case tea.KeyMsg:
 		switch msg.Type {
@@ -133,6 +138,8 @@ func (m Leader) handleRune(s string) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "/":
 			search := NewSearch(m.browser, m.all, m.groups, m.showTags)
+			search.width, search.height = m.width, m.height // bubbletea won't resend size on a model swap
+			search.clamp()
 			return search, search.Init()
 		}
 	}
@@ -215,39 +222,38 @@ func (m Leader) View() string {
 	if m.quitting {
 		return ""
 	}
-	var b strings.Builder
-	b.WriteString(header(m.breadcrumb()) + "\n\n")
+	head := []string{header(m.breadcrumb()), ""}
+	foot := []string{"", hintStyle.Render(m.footer())}
 
-	if len(m.childrenOf(m.prefix)) == 0 {
-		b.WriteString(hintStyle.Render("  no favorites yet — add a key to a bookmark in `bml edit`") + "\n\n")
-	} else {
-		m.renderTree(&b, m.prefix, 0)
+	body := m.treeLines(m.prefix, 0)
+	if len(body) == 0 {
+		body = []string{hintStyle.Render("  no favorites yet — add a key to a bookmark in `bml edit`")}
 	}
-
-	b.WriteString("\n" + hintStyle.Render(m.footer()) + "\n")
-	return b.String()
+	return frame(m.width, m.height, head, body, foot)
 }
 
-// renderTree writes the menu rooted at prefix, expanding groups inline with
-// their children indented one level deeper.
-func (m Leader) renderTree(b *strings.Builder, prefix string, depth int) {
+// treeLines renders the menu rooted at prefix as a slice of lines, expanding
+// groups inline with their children indented one level deeper.
+func (m Leader) treeLines(prefix string, depth int) []string {
 	indent := strings.Repeat("  ", depth*2+1)
+	var lines []string
 	for _, c := range m.childrenOf(prefix) {
 		if c.leaf {
 			row := indent + keyBadge.Render(c.ch) + "  " + nameStyle.Render(c.name)
 			if m.showTags {
 				row += renderTags(c.tags)
 			}
-			b.WriteString(row + "\n")
+			lines = append(lines, row)
 			continue
 		}
 		label := c.name
 		if label == "" {
 			label = "group"
 		}
-		b.WriteString(indent + keyBadge.Render(c.ch) + "  " + groupHeader.Render("["+label+"]") + "\n")
-		m.renderTree(b, prefix+c.ch, depth+1)
+		lines = append(lines, indent+keyBadge.Render(c.ch)+"  "+groupHeader.Render("["+label+"]"))
+		lines = append(lines, m.treeLines(prefix+c.ch, depth+1)...)
 	}
+	return lines
 }
 
 func (m Leader) footer() string {
@@ -264,7 +270,7 @@ type errer interface{ Err() error }
 // RunLeader runs the interactive program (starting in leader mode) and returns
 // any error from acting on a bookmark.
 func RunLeader(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool) error {
-	final, err := tea.NewProgram(NewLeader(b, bookmarks, groups, showTags)).Run()
+	final, err := tea.NewProgram(NewLeader(b, bookmarks, groups, showTags), tea.WithAltScreen()).Run()
 	if err != nil {
 		return err
 	}

@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 
 	"bml/internal/browser"
 	"bml/internal/config"
@@ -11,23 +10,27 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// maxVisible caps how many results render at once; the window scrolls to keep
-// the selection in view.
-const maxVisible = 10
+// defaultVisible is used before the window size is known.
+const defaultVisible = 10
+
+// searchChrome is the number of non-result rows in the view (header lines +
+// footer lines): logo, query, count, blank, blank, hint.
+const searchChrome = 6
 
 // Search is the fuzzy finder entered from leader mode with "/". It matches over
 // name, url, and tags, and acts on the selected bookmark with Enter.
 type Search struct {
-	browser  browser.Browser
-	all      []config.Bookmark
-	groups   []config.Group
-	showTags bool // carried so returning to leader preserves the setting
-	input    textinput.Model
-	results  []Result
-	cursor   int
-	offset   int
-	err      error
-	quitting bool
+	browser       browser.Browser
+	all           []config.Bookmark
+	groups        []config.Group
+	showTags      bool // carried so returning to leader preserves the setting
+	input         textinput.Model
+	results       []Result
+	cursor        int
+	offset        int
+	width, height int
+	err           error
+	quitting      bool
 }
 
 // NewSearch builds the search model over the full bookmark list.
@@ -54,14 +57,21 @@ func (m Search) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		m.clamp()
+		return m, nil
+
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			m.quitting = true
 			return m, tea.Quit
 		case tea.KeyEsc:
-			// Back to leader mode.
-			return NewLeader(m.browser, m.all, m.groups, m.showTags), nil
+			// Back to leader mode, carrying the known size (no resize needed).
+			leader := NewLeader(m.browser, m.all, m.groups, m.showTags)
+			leader.width, leader.height = m.width, m.height
+			return leader, nil
 		case tea.KeyEnter:
 			if len(m.results) > 0 {
 				return m, act(m.browser, m.results[m.cursor].Bookmark.URL, false)
@@ -90,8 +100,21 @@ func (m *Search) move(delta int) {
 	m.clamp()
 }
 
+// visibleCount is how many results fit in the body (each result is 2 rows).
+func (m Search) visibleCount() int {
+	if m.height <= 0 {
+		return defaultVisible
+	}
+	n := (m.height - searchChrome) / 2
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
 // clamp keeps the cursor in range and the scroll window around it.
 func (m *Search) clamp() {
+	vis := m.visibleCount()
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
@@ -104,8 +127,8 @@ func (m *Search) clamp() {
 	if m.cursor < m.offset {
 		m.offset = m.cursor
 	}
-	if m.cursor >= m.offset+maxVisible {
-		m.offset = m.cursor - maxVisible + 1
+	if m.cursor >= m.offset+vis {
+		m.offset = m.cursor - vis + 1
 	}
 }
 
@@ -113,47 +136,46 @@ func (m Search) View() string {
 	if m.quitting {
 		return ""
 	}
-	var b strings.Builder
-	b.WriteString(header("search") + "\n\n")
+	head := []string{
+		header("search"),
+		"  " + promptStr.Render("/ ") + m.input.View(),
+		"  " + hintStyle.Render(fmt.Sprintf("%d result%s", len(m.results), plural(len(m.results)))),
+		"",
+	}
+	foot := []string{"", hintStyle.Render("  ↑↓  move   ·   ↵  open   ·   esc  back   ·   ^c  quit")}
 
-	// Query line: a prompt glyph + the live input.
-	b.WriteString("  " + promptStr.Render("/ ") + m.input.View() + "\n")
-	b.WriteString("  " + hintStyle.Render(fmt.Sprintf("%d result%s", len(m.results), plural(len(m.results)))) + "\n\n")
-
+	var body []string
 	if len(m.results) == 0 {
-		b.WriteString("  " + hintStyle.Render("no matches") + "\n")
+		body = []string{"  " + hintStyle.Render("no matches")}
+	} else {
+		end := m.offset + m.visibleCount()
+		if end > len(m.results) {
+			end = len(m.results)
+		}
+		for i := m.offset; i < end; i++ {
+			body = append(body, m.renderRowLines(m.results[i], i == m.cursor)...)
+		}
 	}
-
-	end := m.offset + maxVisible
-	if end > len(m.results) {
-		end = len(m.results)
-	}
-	for i := m.offset; i < end; i++ {
-		b.WriteString(m.renderRow(m.results[i], i == m.cursor))
-	}
-	if len(m.results) > end {
-		b.WriteString("  " + hintStyle.Render(fmt.Sprintf("… %d more", len(m.results)-end)) + "\n")
-	}
-
-	b.WriteString("\n" + hintStyle.Render("  ↑↓  move   ·   ↵  open   ·   esc  back   ·   ^c  quit") + "\n")
-	return b.String()
+	return frame(m.width, m.height, head, body, foot)
 }
 
-func (m Search) renderRow(r Result, selected bool) string {
-	name := highlight(r.Bookmark.Name, r.NameMatch, nameStyle, matchStyle)
+// renderRowLines returns a result as two lines: name (with tags) and a dimmed
+// URL indented underneath.
+func (m Search) renderRowLines(r Result, selected bool) []string {
+	base := nameStyle
 	if selected {
-		name = highlight(r.Bookmark.Name, r.NameMatch, selName, matchStyle)
+		base = selName
 	}
+	name := highlight(r.Bookmark.Name, r.NameMatch, base, matchStyle)
 
 	marker := "  "
 	if selected {
 		marker = cursorBar.Render("▌ ")
 	}
-
-	line := marker + name + renderTags(r.Bookmark.Tags) + "\n"
-	// URL on a dimmed second line, indented under the name.
-	line += "    " + urlStyle.Render(r.Bookmark.URL) + "\n"
-	return line
+	return []string{
+		marker + name + renderTags(r.Bookmark.Tags),
+		"    " + urlStyle.Render(r.Bookmark.URL),
+	}
 }
 
 func plural(n int) string {
