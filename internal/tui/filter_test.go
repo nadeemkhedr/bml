@@ -56,6 +56,41 @@ func TestFilter_MatchesByTag(t *testing.T) {
 	}
 }
 
+func TestFilter_TagMatchPositions(t *testing.T) {
+	got := Filter(corpus(), "dev")
+	var gh *Result
+	for i := range got {
+		if got[i].Bookmark.Name == "GitHub" {
+			gh = &got[i]
+		}
+	}
+	if gh == nil {
+		t.Fatal("GitHub should match the 'dev' tag")
+	}
+	// GitHub has one tag, "dev", fully matched -> indexes 0,1,2.
+	if len(gh.TagMatch) != 1 || len(gh.TagMatch[0]) != 3 {
+		t.Errorf("expected dev tag fully matched, got %v", gh.TagMatch)
+	}
+	// Go docs has tags [dev, reference]; "dev" matches, "reference" does not.
+	var godocs *Result
+	for i := range got {
+		if got[i].Bookmark.Name == "Go docs" {
+			godocs = &got[i]
+		}
+	}
+	if godocs == nil || len(godocs.TagMatch) != 2 || godocs.TagMatch[1] != nil {
+		t.Errorf("non-matching tag should be nil, got %v", godocs)
+	}
+}
+
+func TestFilter_EmptyQueryNoTagMatch(t *testing.T) {
+	for _, r := range Filter(corpus(), "") {
+		if r.TagMatch != nil {
+			t.Errorf("empty query should not produce tag highlights: %v", r.TagMatch)
+		}
+	}
+}
+
 func TestFilter_ExcludesNonMatches(t *testing.T) {
 	if got := Filter(corpus(), "zzzz"); len(got) != 0 {
 		t.Fatalf("expected no matches, got %v", names(got))

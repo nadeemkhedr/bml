@@ -26,11 +26,13 @@ var (
 	urlStyle   = lipgloss.NewStyle().Foreground(subtle)
 	hintStyle  = lipgloss.NewStyle().Foreground(subtle)
 
-	// A tag pill.
-	pillStyle = lipgloss.NewStyle().
-			Foreground(accent).
-			Background(lipgloss.AdaptiveColor{Light: "#EDE9FE", Dark: "#2A2540"}).
-			Padding(0, 1)
+	// A tag pill (and per-character styles for highlighting matched runes while
+	// keeping the pill background).
+	pillBg    = lipgloss.AdaptiveColor{Light: "#EDE9FE", Dark: "#2A2540"}
+	pillStyle = lipgloss.NewStyle().Foreground(accent).Background(pillBg).Padding(0, 1)
+	pillPad   = lipgloss.NewStyle().Background(pillBg)
+	pillChar  = lipgloss.NewStyle().Foreground(accent).Background(pillBg)
+	pillMatch = lipgloss.NewStyle().Foreground(match).Background(pillBg).Bold(true)
 
 	// Group header in the leader menu, e.g. "[Work]".
 	groupHeader = lipgloss.NewStyle().Foreground(accent).Bold(true)
@@ -50,13 +52,47 @@ func header(subtitle string) string {
 	return line
 }
 
-// renderTags renders tags as pills.
+// renderTags renders tags as plain pills (no highlighting).
 func renderTags(tags []string) string {
 	out := ""
 	for _, t := range tags {
 		out += " " + pillStyle.Render(t)
 	}
 	return out
+}
+
+// renderTagsMatch renders tags as pills, highlighting the matched rune indexes
+// in each tag. matches is aligned to tags; a nil entry means no highlight.
+func renderTagsMatch(tags []string, matches [][]int) string {
+	out := ""
+	for i, t := range tags {
+		var idx []int
+		if i < len(matches) {
+			idx = matches[i]
+		}
+		out += " " + pillWith(t, idx)
+	}
+	return out
+}
+
+// pillWith renders one tag pill, emphasizing the matched rune indexes.
+func pillWith(tag string, idx []int) string {
+	if len(idx) == 0 {
+		return pillStyle.Render(tag)
+	}
+	set := make(map[int]bool, len(idx))
+	for _, i := range idx {
+		set[i] = true
+	}
+	s := pillPad.Render(" ")
+	for i, r := range []rune(tag) {
+		if set[i] {
+			s += pillMatch.Render(string(r))
+		} else {
+			s += pillChar.Render(string(r))
+		}
+	}
+	return s + pillPad.Render(" ")
 }
 
 // highlight renders text, emphasizing the rune indexes in idx.

@@ -173,7 +173,7 @@ func (m Search) renderRowLines(r Result, selected bool) []string {
 		marker = cursorBar.Render("▌ ")
 	}
 	return []string{
-		marker + name + renderTags(r.Bookmark.Tags),
+		marker + name + renderTagsMatch(r.Bookmark.Tags, r.TagMatch),
 		"    " + urlStyle.Render(r.Bookmark.URL),
 	}
 }

@@ -8,10 +8,13 @@ import (
 )
 
 // Result is one ranked search hit. NameMatch holds the rune indexes in the
-// bookmark's Name that matched the query, for highlighting.
+// bookmark's Name that matched the query; TagMatch is aligned to Bookmark.Tags,
+// with each entry holding the matched rune indexes in that tag (nil if the tag
+// didn't match). Both drive highlighting.
 type Result struct {
 	Bookmark  config.Bookmark
 	NameMatch []int
+	TagMatch  [][]int
 	score     int
 }
 
@@ -38,26 +41,43 @@ func Filter(bms []config.Bookmark, query string) []Result {
 	for _, b := range bms {
 		nameIdx, nameScore, nameOK := subseq(q, strings.ToLower(b.Name))
 		_, urlScore, urlOK := subseq(q, strings.ToLower(b.URL))
-		tagScore, tagOK := bestTag(q, b.Tags)
+
+		// Per-tag match positions (and the best tag score for ranking).
+		var tagMatch [][]int
+		tagScore, tagOK := 0, false
+		if len(b.Tags) > 0 {
+			tagMatch = make([][]int, len(b.Tags))
+			for i, t := range b.Tags {
+				if idx, s, ok := subseq(q, strings.ToLower(t)); ok {
+					tagMatch[i] = idx
+					if !tagOK || s > tagScore {
+						tagScore = s
+					}
+					tagOK = true
+				}
+			}
+		}
 		if !nameOK && !urlOK && !tagOK {
 			continue
 		}
 
+		// Rank by the best-scoring field, but highlight every field that matched.
 		best := 0
-		var nm []int
-		if nameOK {
+		if nameOK && bonusName+nameScore > best {
 			best = bonusName + nameScore
-			nm = nameIdx
 		}
 		if tagOK && bonusTag+tagScore > best {
 			best = bonusTag + tagScore
-			nm = nil
 		}
 		if urlOK && bonusURL+urlScore > best {
 			best = bonusURL + urlScore
-			nm = nil
 		}
-		out = append(out, Result{Bookmark: b, NameMatch: nm, score: best})
+
+		var nm []int
+		if nameOK {
+			nm = nameIdx
+		}
+		out = append(out, Result{Bookmark: b, NameMatch: nm, TagMatch: tagMatch, score: best})
 	}
 
 	sort.SliceStable(out, func(i, j int) bool {
@@ -67,16 +87,6 @@ func Filter(bms []config.Bookmark, query string) []Result {
 		return out[i].Bookmark.Name < out[j].Bookmark.Name
 	})
 	return out
-}
-
-func bestTag(q string, tags []string) (int, bool) {
-	best, ok := 0, false
-	for _, t := range tags {
-		if _, s, matched := subseq(q, strings.ToLower(t)); matched && (!ok || s > best) {
-			best, ok = s, true
-		}
-	}
-	return best, ok
 }
 
 // subseq greedily matches pattern as a subsequence of text, returning the
