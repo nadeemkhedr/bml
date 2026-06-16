@@ -1,0 +1,136 @@
+package config
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func writeTemp(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "bookmarks.toml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestLoad_Valid(t *testing.T) {
+	cfg, err := Load(writeTemp(t, `
+[[bookmark]]
+key = "g"
+name = "GitHub"
+url = "https://github.com"
+tags = ["dev"]
+
+[[bookmark]]
+name = "Go docs"
+url = "https://pkg.go.dev"
+`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Bookmarks) != 2 {
+		t.Fatalf("got %d bookmarks, want 2", len(cfg.Bookmarks))
+	}
+	if url, ok := cfg.URLForKey("g"); !ok || url != "https://github.com" {
+		t.Errorf("URLForKey(g) = %q, %v", url, ok)
+	}
+	if _, ok := cfg.URLForKey("z"); ok {
+		t.Errorf("URLForKey(z) should be absent")
+	}
+}
+
+func TestLoad_DuplicateKeyErrors(t *testing.T) {
+	_, err := Load(writeTemp(t, `
+[[bookmark]]
+key = "g"
+name = "GitHub"
+url = "https://github.com"
+
+[[bookmark]]
+key = "g"
+name = "GitLab"
+url = "https://gitlab.com"
+`))
+	if err == nil {
+		t.Fatal("expected duplicate-key error")
+	}
+	if !strings.Contains(err.Error(), "duplicate key") {
+		t.Errorf("error %q should mention the duplicate key", err)
+	}
+}
+
+func TestLoad_MissingFieldsError(t *testing.T) {
+	if _, err := Load(writeTemp(t, "[[bookmark]]\nurl = \"https://x.com\"\n")); err == nil {
+		t.Error("expected error for missing name")
+	}
+	if _, err := Load(writeTemp(t, "[[bookmark]]\nname = \"X\"\n")); err == nil {
+		t.Error("expected error for missing url")
+	}
+}
+
+func TestLoad_MultiCharKeyErrors(t *testing.T) {
+	_, err := Load(writeTemp(t, `
+[[bookmark]]
+key = "gh"
+name = "GitHub"
+url = "https://github.com"
+`))
+	if err == nil {
+		t.Fatal("expected error for multi-character key")
+	}
+}
+
+func TestLoad_MissingFileWrapsNotExist(t *testing.T) {
+	_, err := Load(filepath.Join(t.TempDir(), "nope.toml"))
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("missing file should wrap os.ErrNotExist, got %v", err)
+	}
+}
+
+func TestLoad_InvalidTOMLErrors(t *testing.T) {
+	if _, err := Load(writeTemp(t, "this is = not [valid")); err == nil {
+		t.Error("expected parse error for invalid TOML")
+	}
+}
+
+func TestPath_Precedence(t *testing.T) {
+	t.Setenv("BML_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	if got, _ := Path("/explicit/flag.toml"); got != "/explicit/flag.toml" {
+		t.Errorf("flag should win, got %q", got)
+	}
+
+	t.Setenv("BML_CONFIG", "/env/path.toml")
+	if got, _ := Path(""); got != "/env/path.toml" {
+		t.Errorf("BML_CONFIG should win over default, got %q", got)
+	}
+
+	t.Setenv("BML_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", "/xdg")
+	if got, _ := Path(""); got != "/xdg/bml/bookmarks.toml" {
+		t.Errorf("XDG path = %q", got)
+	}
+}
+
+func TestWriteStarter_CreatesAndIsIdempotent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sub", "bookmarks.toml")
+
+	created, err := WriteStarter(path)
+	if err != nil || !created {
+		t.Fatalf("first WriteStarter: created=%v err=%v", created, err)
+	}
+	// The starter must itself be valid and loadable.
+	if _, err := Load(path); err != nil {
+		t.Fatalf("starter config does not load: %v", err)
+	}
+
+	created, err = WriteStarter(path)
+	if err != nil || created {
+		t.Fatalf("second WriteStarter should be a no-op: created=%v err=%v", created, err)
+	}
+}
