@@ -160,14 +160,18 @@ type child struct {
 	tags  []string
 }
 
-// children returns the menu items reachable by one more keystroke from prefix.
-func (m Leader) children() []child {
-	plen := len([]rune(m.prefix))
+// children returns the menu items reachable by one more keystroke from the
+// current prefix.
+func (m Leader) children() []child { return m.childrenOf(m.prefix) }
+
+// childrenOf returns the menu items reachable by one more keystroke from prefix.
+func (m Leader) childrenOf(prefix string) []child {
+	plen := len([]rune(prefix))
 	seen := make(map[string]bool)
 	var out []child
 	for _, f := range m.favorites {
 		kr := []rune(f.key)
-		if !strings.HasPrefix(f.key, m.prefix) || len(kr) <= plen {
+		if !strings.HasPrefix(f.key, prefix) || len(kr) <= plen {
 			continue
 		}
 		ch := string(kr[plen])
@@ -175,7 +179,7 @@ func (m Leader) children() []child {
 			continue
 		}
 		seen[ch] = true
-		full := m.prefix + ch
+		full := prefix + ch
 		if bm, ok := m.byKey[full]; ok {
 			out = append(out, child{ch: ch, leaf: true, name: bm.name, tags: bm.tags})
 		} else {
@@ -211,26 +215,32 @@ func (m Leader) View() string {
 	var b strings.Builder
 	b.WriteString(header(m.breadcrumb()) + "\n\n")
 
-	kids := m.children()
-	if len(kids) == 0 {
+	if len(m.childrenOf(m.prefix)) == 0 {
 		b.WriteString(hintStyle.Render("  no favorites yet — add a key to a bookmark in `bml edit`") + "\n\n")
-	}
-	for _, c := range kids {
-		b.WriteString("  " + keyBadge.Render(c.ch) + "  ")
-		if c.leaf {
-			b.WriteString(nameStyle.Render(c.name) + renderTags(c.tags))
-		} else {
-			label := c.name
-			if label == "" {
-				label = "group"
-			}
-			b.WriteString(nameStyle.Render(label) + " " + groupArrow.Render("›"))
-		}
-		b.WriteString("\n")
+	} else {
+		m.renderTree(&b, m.prefix, 0)
 	}
 
 	b.WriteString("\n" + hintStyle.Render(m.footer()) + "\n")
 	return b.String()
+}
+
+// renderTree writes the menu rooted at prefix, expanding groups inline with
+// their children indented one level deeper.
+func (m Leader) renderTree(b *strings.Builder, prefix string, depth int) {
+	indent := strings.Repeat("  ", depth*2+1)
+	for _, c := range m.childrenOf(prefix) {
+		if c.leaf {
+			b.WriteString(indent + keyBadge.Render(c.ch) + "  " + nameStyle.Render(c.name) + renderTags(c.tags) + "\n")
+			continue
+		}
+		label := c.name
+		if label == "" {
+			label = "group"
+		}
+		b.WriteString(indent + keyBadge.Render(c.ch) + "  " + groupHeader.Render("["+label+"]") + "\n")
+		m.renderTree(b, prefix+c.ch, depth+1)
+	}
 }
 
 func (m Leader) footer() string {

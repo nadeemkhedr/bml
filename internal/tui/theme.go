@@ -32,8 +32,8 @@ var (
 			Background(lipgloss.AdaptiveColor{Light: "#EDE9FE", Dark: "#2A2540"}).
 			Padding(0, 1)
 
-	// Group arrow marker in the leader menu.
-	groupArrow = lipgloss.NewStyle().Foreground(accent).Bold(true)
+	// Group header in the leader menu, e.g. "[Work]".
+	groupHeader = lipgloss.NewStyle().Foreground(accent).Bold(true)
 
 	// Selected row marker and prompt.
 	cursorBar = lipgloss.NewStyle().Foreground(accent).Bold(true)
