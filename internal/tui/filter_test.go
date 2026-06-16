@@ -91,6 +91,33 @@ func TestFilter_EmptyQueryNoTagMatch(t *testing.T) {
 	}
 }
 
+func TestFilter_TierOrdering(t *testing.T) {
+	bms := []config.Bookmark{
+		{Name: "Animal Theme", URL: "https://a.com"},   // scatter: a-n-i-m..e
+		{Name: "Myanimex", URL: "https://b.com"},        // substring, mid-word
+		{Name: "Idle Anime List", URL: "https://c.com"}, // begins a word
+		{Name: "Anime Hub", URL: "https://d.com"},       // field prefix
+	}
+	got := names(Filter(bms, "anime"))
+	want := []string{"Anime Hub", "Idle Anime List", "Myanimex", "Animal Theme"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("tier order = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestFilter_TierBeatsField(t *testing.T) {
+	bms := []config.Bookmark{
+		{Name: "Animal Theme", URL: "https://x.com"},            // name scatter
+		{Name: "Zebra", URL: "https://y.com", Tags: []string{"anime"}}, // tag prefix
+	}
+	got := names(Filter(bms, "anime"))
+	if got[0] != "Zebra" {
+		t.Errorf("a tag prefix should outrank a name scatter, got %v", got)
+	}
+}
+
 func TestFilter_ExcludesNonMatches(t *testing.T) {
 	if got := Filter(corpus(), "zzzz"); len(got) != 0 {
 		t.Fatalf("expected no matches, got %v", names(got))

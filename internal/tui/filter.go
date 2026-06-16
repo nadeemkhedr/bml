@@ -18,15 +18,28 @@ type Result struct {
 	score     int
 }
 
-// Field weighting — a name hit outranks a tag hit, which outranks a url hit.
+// Match tiers, best first. A query that begins a field beats one that begins a
+// word inside it, which beats a mid-word substring, which beats a scattered
+// (subsequence) match.
 const (
-	bonusName = 2000
-	bonusTag  = 1000
-	bonusURL  = 0
+	tierScatter = 1 // chars present but not contiguous
+	tierSubstr  = 2 // contiguous substring, mid-word
+	tierWord    = 3 // begins a word (word-boundary), not the field start
+	tierPrefix  = 4 // field starts with the query
 )
 
-// Filter ranks bookmarks against a fuzzy query over name, url, and tags. An
-// empty query returns every bookmark in original order (no highlight).
+// Field weighting within a tier — a name hit outranks a tag hit, which outranks
+// a url hit.
+const (
+	bonusName = 3000
+	bonusTag  = 2000
+	bonusURL  = 1000
+)
+
+// Filter ranks bookmarks against a query over name, url, and tags. An empty
+// query returns every bookmark in original order (no highlight). Results are
+// ordered by match tier first (prefix > word > substring > scatter), then by
+// field (name > tag > url), then by an earlier/shorter-match bonus, then name.
 func Filter(bms []config.Bookmark, query string) []Result {
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
@@ -36,24 +49,31 @@ func Filter(bms []config.Bookmark, query string) []Result {
 		}
 		return out
 	}
+	qr := []rune(q)
 
 	var out []Result
 	for _, b := range bms {
-		nameIdx, nameScore, nameOK := subseq(q, strings.ToLower(b.Name))
-		_, urlScore, urlOK := subseq(q, strings.ToLower(b.URL))
+		nameR := []rune(strings.ToLower(b.Name))
+		nameTier, nameIdx, nameOK := fieldMatch(qr, nameR)
 
-		// Per-tag match positions (and the best tag score for ranking).
+		urlR := []rune(strings.ToLower(b.URL))
+		urlTier, _, urlOK := fieldMatch(qr, urlR)
+
+		// Per-tag match positions, plus the best tag tier for ranking.
 		var tagMatch [][]int
-		tagScore, tagOK := 0, false
+		tagTier, tagPos, tagLen, tagOK := 0, 0, 0, false
 		if len(b.Tags) > 0 {
 			tagMatch = make([][]int, len(b.Tags))
 			for i, t := range b.Tags {
-				if idx, s, ok := subseq(q, strings.ToLower(t)); ok {
-					tagMatch[i] = idx
-					if !tagOK || s > tagScore {
-						tagScore = s
-					}
-					tagOK = true
+				tr := []rune(strings.ToLower(t))
+				tier, idx, ok := fieldMatch(qr, tr)
+				if !ok {
+					continue
+				}
+				tagMatch[i] = idx
+				tagOK = true
+				if tier > tagTier {
+					tagTier, tagPos, tagLen = tier, idx[0], len(tr)
 				}
 			}
 		}
@@ -61,23 +81,30 @@ func Filter(bms []config.Bookmark, query string) []Result {
 			continue
 		}
 
-		// Rank by the best-scoring field, but highlight every field that matched.
-		best := 0
-		if nameOK && bonusName+nameScore > best {
-			best = bonusName + nameScore
+		// Pick the winning field by tier; on ties, name beats tag beats url.
+		bestTier, fieldBonus, winPos, winLen := 0, 0, 0, 0
+		if nameOK && nameTier > bestTier {
+			bestTier, fieldBonus, winPos, winLen = nameTier, bonusName, nameIdx[0], len(nameR)
 		}
-		if tagOK && bonusTag+tagScore > best {
-			best = bonusTag + tagScore
+		if tagOK && tagTier > bestTier {
+			bestTier, fieldBonus, winPos, winLen = tagTier, bonusTag, tagPos, tagLen
 		}
-		if urlOK && bonusURL+urlScore > best {
-			best = bonusURL + urlScore
+		if urlOK && urlTier > bestTier {
+			bestTier, fieldBonus, winPos, winLen = urlTier, bonusURL, 0, len(urlR)
 		}
+
+		// Within tier+field: earlier and shorter matches rank a little higher.
+		fine := 900 - winPos*10 - winLen
+		if fine < 0 {
+			fine = 0
+		}
+		score := bestTier*10000 + fieldBonus + fine
 
 		var nm []int
 		if nameOK {
 			nm = nameIdx
 		}
-		out = append(out, Result{Bookmark: b, NameMatch: nm, TagMatch: tagMatch, score: best})
+		out = append(out, Result{Bookmark: b, NameMatch: nm, TagMatch: tagMatch, score: score})
 	}
 
 	sort.SliceStable(out, func(i, j int) bool {
@@ -89,37 +116,81 @@ func Filter(bms []config.Bookmark, query string) []Result {
 	return out
 }
 
-// subseq greedily matches pattern as a subsequence of text, returning the
-// matched rune indexes and a score that rewards consecutive and word-boundary
-// hits. pattern is assumed lowercase; text should be too.
-func subseq(pattern, text string) ([]int, int, bool) {
-	pr := []rune(pattern)
-	tr := []rune(text)
-	if len(pr) == 0 {
-		return nil, 0, true
+// fieldMatch classifies how query qr matches text tr and returns the match tier,
+// the matched rune indexes (for highlighting), and whether it matched at all.
+func fieldMatch(qr, tr []rune) (int, []int, bool) {
+	if len(qr) == 0 {
+		return 0, nil, false
 	}
 
-	idx := make([]int, 0, len(pr))
-	score, pi, prev := 0, 0, -2
-	for ti := 0; ti < len(tr) && pi < len(pr); ti++ {
-		if tr[ti] != pr[pi] {
+	// Find the first contiguous occurrence and the first word-boundary one.
+	firstPos, wordPos := -1, -1
+	for i := 0; i+len(qr) <= len(tr); i++ {
+		if !runesEqual(tr[i:i+len(qr)], qr) {
 			continue
 		}
-		score++
-		if ti == prev+1 {
-			score += 5 // consecutive
+		if firstPos < 0 {
+			firstPos = i
 		}
-		if ti == 0 || isBoundary(tr[ti-1]) {
-			score += 3 // start of a word
+		if (i == 0 || isBoundary(tr[i-1])) && wordPos < 0 {
+			wordPos = i
 		}
-		idx = append(idx, ti)
-		prev = ti
-		pi++
+		if firstPos >= 0 && wordPos >= 0 {
+			break
+		}
 	}
-	if pi != len(pr) {
-		return nil, 0, false
+
+	switch {
+	case firstPos == 0:
+		return tierPrefix, seqIdx(0, len(qr)), true
+	case wordPos > 0:
+		return tierWord, seqIdx(wordPos, len(qr)), true
+	case firstPos > 0:
+		return tierSubstr, seqIdx(firstPos, len(qr)), true
 	}
-	return idx, score, true
+
+	if idx, ok := subseqRunes(qr, tr); ok {
+		return tierScatter, idx, true
+	}
+	return 0, nil, false
+}
+
+// subseqRunes reports whether qr is a subsequence of tr, returning the matched
+// rune indexes.
+func subseqRunes(qr, tr []rune) ([]int, bool) {
+	idx := make([]int, 0, len(qr))
+	pi := 0
+	for ti := 0; ti < len(tr) && pi < len(qr); ti++ {
+		if tr[ti] == qr[pi] {
+			idx = append(idx, ti)
+			pi++
+		}
+	}
+	if pi != len(qr) {
+		return nil, false
+	}
+	return idx, true
+}
+
+func runesEqual(a, b []rune) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// seqIdx returns the run of n indexes starting at start.
+func seqIdx(start, n int) []int {
+	idx := make([]int, n)
+	for i := range idx {
+		idx[i] = start + i
+	}
+	return idx
 }
 
 func isBoundary(r rune) bool {
