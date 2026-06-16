@@ -7,13 +7,14 @@ import (
 	"bml/internal/config"
 )
 
-// Result is one ranked search hit. NameMatch holds the rune indexes in the
-// bookmark's Name that matched the query; TagMatch is aligned to Bookmark.Tags,
-// with each entry holding the matched rune indexes in that tag (nil if the tag
-// didn't match). Both drive highlighting.
+// Result is one ranked search hit. NameMatch / URLMatch hold the matched rune
+// indexes in the bookmark's Name / URL; TagMatch is aligned to Bookmark.Tags,
+// each entry holding the matched rune indexes in that tag (nil if it didn't
+// match). All three drive highlighting.
 type Result struct {
 	Bookmark  config.Bookmark
 	NameMatch []int
+	URLMatch  []int
 	TagMatch  [][]int
 	score     int
 }
@@ -57,7 +58,7 @@ func Filter(bms []config.Bookmark, query string) []Result {
 		nameTier, nameIdx, nameOK := fieldMatch(qr, nameR)
 
 		urlR := []rune(strings.ToLower(b.URL))
-		urlTier, _, urlOK := fieldMatch(qr, urlR)
+		urlTier, urlIdx, urlOK := fieldMatch(qr, urlR)
 
 		// Per-tag match positions, plus the best tag tier for ranking.
 		var tagMatch [][]int
@@ -104,7 +105,11 @@ func Filter(bms []config.Bookmark, query string) []Result {
 		if nameOK {
 			nm = nameIdx
 		}
-		out = append(out, Result{Bookmark: b, NameMatch: nm, TagMatch: tagMatch, score: score})
+		var um []int
+		if urlOK {
+			um = urlIdx
+		}
+		out = append(out, Result{Bookmark: b, NameMatch: nm, URLMatch: um, TagMatch: tagMatch, score: score})
 	}
 
 	sort.SliceStable(out, func(i, j int) bool {

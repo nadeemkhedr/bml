@@ -174,7 +174,7 @@ func (m Search) renderRowLines(r Result, selected bool) []string {
 	}
 	return []string{
 		marker + name + renderTagsMatch(r.Bookmark.Tags, r.TagMatch),
-		"    " + urlStyle.Render(r.Bookmark.URL),
+		"    " + highlight(r.Bookmark.URL, r.URLMatch, urlStyle, matchStyle),
 	}
 }
 

@@ -83,6 +83,16 @@ func TestFilter_TagMatchPositions(t *testing.T) {
 	}
 }
 
+func TestFilter_URLMatchPositions(t *testing.T) {
+	got := Filter(corpus(), "ycomb")
+	if len(got) != 1 || got[0].Bookmark.Name != "Hacker News" {
+		t.Fatalf("expected Hacker News via url, got %v", names(got))
+	}
+	if len(got[0].URLMatch) == 0 {
+		t.Error("a url match should populate URLMatch for highlighting")
+	}
+}
+
 func TestFilter_EmptyQueryNoTagMatch(t *testing.T) {
 	for _, r := range Filter(corpus(), "") {
 		if r.TagMatch != nil {
