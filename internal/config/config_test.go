@@ -245,6 +245,38 @@ func TestRenderSave_PreservesGroups(t *testing.T) {
 	}
 }
 
+func TestLeaderTags_DefaultsTrue(t *testing.T) {
+	cfg, err := Load(writeTemp(t, "[[bookmark]]\nname=\"X\"\nurl=\"https://x.com\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.LeaderTags {
+		t.Error("leader_tags should default to true when unset")
+	}
+}
+
+func TestLeaderTags_ExplicitFalseRoundTrips(t *testing.T) {
+	cfg, err := Load(writeTemp(t, "leader_tags = false\n[[bookmark]]\nname=\"X\"\nurl=\"https://x.com\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LeaderTags {
+		t.Fatal("leader_tags=false should disable tags")
+	}
+	// Saving and reloading must preserve the explicit false.
+	path := filepath.Join(t.TempDir(), "out.toml")
+	if _, err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.LeaderTags {
+		t.Error("leader_tags=false should survive a round-trip")
+	}
+}
+
 func TestPath_Precedence(t *testing.T) {
 	t.Setenv("BML_CONFIG", "")
 	t.Setenv("XDG_CONFIG_HOME", "")

@@ -37,19 +37,23 @@ type Group struct {
 // Config is the loaded, validated bookmark collection plus settings.
 type Config struct {
 	// Browser is the macOS application name to drive (empty = backend default).
-	Browser   string
-	Bookmarks []Bookmark
-	Groups    []Group
-	byKey     map[string]Bookmark
-	groupName map[string]string
+	Browser string
+	// LeaderTags controls whether tags are shown in leader mode (default true).
+	LeaderTags bool
+	Bookmarks  []Bookmark
+	Groups     []Group
+	leaderTags *bool // raw value as written, preserved on round-trip
+	byKey      map[string]Bookmark
+	groupName  map[string]string
 }
 
-// tomlFile mirrors the on-disk layout: a top-level browser setting, optional
-// [[group]] labels, and an array of [[bookmark]] tables.
+// tomlFile mirrors the on-disk layout: top-level settings, optional [[group]]
+// labels, and an array of [[bookmark]] tables.
 type tomlFile struct {
-	Browser  string     `toml:"browser,omitempty"`
-	Group    []Group    `toml:"group,omitempty"`
-	Bookmark []Bookmark `toml:"bookmark"`
+	Browser    string     `toml:"browser,omitempty"`
+	LeaderTags *bool      `toml:"leader_tags,omitempty"` // nil = default (show)
+	Group      []Group    `toml:"group,omitempty"`
+	Bookmark   []Bookmark `toml:"bookmark"`
 }
 
 // Load reads, parses, and validates the bookmark file at path. A missing file
@@ -69,6 +73,8 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	cfg.Browser = f.Browser
+	cfg.leaderTags = f.LeaderTags
+	cfg.LeaderTags = f.LeaderTags == nil || *f.LeaderTags // default: show
 	return cfg, nil
 }
 
@@ -184,7 +190,7 @@ const renderHeader = `# bml bookmarks — add ` + "`key = \"x\"`" + ` to any boo
 func Render(c *Config) (string, error) {
 	var buf bytes.Buffer
 	buf.WriteString(renderHeader)
-	if err := toml.NewEncoder(&buf).Encode(tomlFile{Browser: c.Browser, Group: c.Groups, Bookmark: c.Bookmarks}); err != nil {
+	if err := toml.NewEncoder(&buf).Encode(tomlFile{Browser: c.Browser, LeaderTags: c.leaderTags, Group: c.Groups, Bookmark: c.Bookmarks}); err != nil {
 		return "", fmt.Errorf("encoding config: %w", err)
 	}
 	return buf.String(), nil
@@ -253,6 +259,9 @@ const starter = `# bml bookmarks — edit this file, then run ` + "`bml`" + ` or
 # Which macOS browser to drive. Any Chromium browser works:
 # "Brave Browser" (default), "Google Chrome", "Arc", "Microsoft Edge".
 # browser = "Brave Browser"
+
+# Show tags next to bookmarks in leader mode (default true).
+# leader_tags = false
 
 # Optional: give a group prefix a friendly name in the menu.
 # [[group]]

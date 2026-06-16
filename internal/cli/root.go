@@ -49,7 +49,7 @@ func NewRootCmd(mk BrowserFactory) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return tui.RunLeader(mk(cfg.Browser), cfg.Bookmarks, cfg.Groups)
+				return tui.RunLeader(mk(cfg.Browser), cfg.Bookmarks, cfg.Groups, cfg.LeaderTags)
 			}
 			return resolveAndAct(cmd, mk, configFlag, args[0], newTab)
 		},

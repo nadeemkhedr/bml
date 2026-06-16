@@ -37,6 +37,7 @@ type Leader struct {
 	browser   browser.Browser
 	all       []config.Bookmark // full list, handed to search mode
 	groups    []config.Group
+	showTags  bool
 	favorites []favorite
 	byKey     map[string]favorite
 	groupName map[string]string
@@ -46,12 +47,14 @@ type Leader struct {
 }
 
 // NewLeader builds the leader model from the bookmark list (keyed bookmarks
-// become navigable favorites) and the optional group labels.
-func NewLeader(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group) Leader {
+// become navigable favorites), the optional group labels, and whether to show
+// tags.
+func NewLeader(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool) Leader {
 	m := Leader{
 		browser:   b,
 		all:       bookmarks,
 		groups:    groups,
+		showTags:  showTags,
 		byKey:     make(map[string]favorite),
 		groupName: make(map[string]string),
 	}
@@ -129,7 +132,7 @@ func (m Leader) handleRune(s string) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		case "/":
-			search := NewSearch(m.browser, m.all, m.groups)
+			search := NewSearch(m.browser, m.all, m.groups, m.showTags)
 			return search, search.Init()
 		}
 	}
@@ -231,7 +234,11 @@ func (m Leader) renderTree(b *strings.Builder, prefix string, depth int) {
 	indent := strings.Repeat("  ", depth*2+1)
 	for _, c := range m.childrenOf(prefix) {
 		if c.leaf {
-			b.WriteString(indent + keyBadge.Render(c.ch) + "  " + nameStyle.Render(c.name) + renderTags(c.tags) + "\n")
+			row := indent + keyBadge.Render(c.ch) + "  " + nameStyle.Render(c.name)
+			if m.showTags {
+				row += renderTags(c.tags)
+			}
+			b.WriteString(row + "\n")
 			continue
 		}
 		label := c.name
@@ -256,8 +263,8 @@ type errer interface{ Err() error }
 
 // RunLeader runs the interactive program (starting in leader mode) and returns
 // any error from acting on a bookmark.
-func RunLeader(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group) error {
-	final, err := tea.NewProgram(NewLeader(b, bookmarks, groups)).Run()
+func RunLeader(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool) error {
+	final, err := tea.NewProgram(NewLeader(b, bookmarks, groups, showTags)).Run()
 	if err != nil {
 		return err
 	}

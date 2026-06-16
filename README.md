@@ -61,6 +61,9 @@ TOML, hand-edited, at `~/.config/bml/bookmarks.toml` (override with `--config` o
 # Optional: which macOS browser to drive (default "Brave Browser").
 # browser = "Google Chrome"
 
+# Optional: show tags next to bookmarks in leader mode (default true).
+# leader_tags = false
+
 # Optional: give a key-group prefix a friendly name in the menu.
 [[group]]
 key = "w"
