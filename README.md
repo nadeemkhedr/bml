@@ -17,8 +17,25 @@ your whole bookmark list.
 
 ## Install
 
+Install globally to `/usr/local/bin` (the usual place for CLI tools):
+
 ```sh
-go install .          # or: go build -o bml .
+make install          # add `sudo` if /usr/local/bin isn't writable: sudo make install
+```
+
+Pick a different location with `PREFIX` (no sudo needed if it's writable):
+
+```sh
+make install PREFIX=~/.local      # installs to ~/.local/bin
+```
+
+Remove it with `make uninstall` (pass the same `PREFIX` you installed with).
+
+Other options:
+
+```sh
+go install .          # installs to $(go env GOPATH)/bin
+make build            # just build ./bml in the repo
 ```
 
 Requires macOS and a Chromium-based browser (Brave, Chrome, Arc, or Edge).
