@@ -10,7 +10,6 @@ import (
 	"bml/internal/config"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // actedMsg reports the result of acting on a URL; receiving it ends the program
@@ -27,11 +26,13 @@ func act(b browser.Browser, url string, forceNew bool) tea.Cmd {
 
 type favorite struct {
 	key, name, url string
+	tags           []string
 }
 
 // Leader is the which-key launcher shown when bml starts with no argument.
 type Leader struct {
 	browser   browser.Browser
+	all       []config.Bookmark // full list, handed to search mode
 	favorites []favorite
 	byKey     map[string]favorite
 	err       error // set when an act fails; surfaced by the caller after exit
@@ -39,14 +40,15 @@ type Leader struct {
 }
 
 // NewLeader builds the leader model from the bookmark list, keeping only the
-// keyed bookmarks (favorites) in config order.
+// keyed bookmarks (favorites) in config order for display while retaining the
+// full list for search mode.
 func NewLeader(b browser.Browser, bookmarks []config.Bookmark) Leader {
-	m := Leader{browser: b, byKey: make(map[string]favorite)}
+	m := Leader{browser: b, all: bookmarks, byKey: make(map[string]favorite)}
 	for _, bm := range bookmarks {
 		if bm.Key == "" {
 			continue
 		}
-		f := favorite{key: bm.Key, name: bm.Name, url: bm.URL}
+		f := favorite{key: bm.Key, name: bm.Name, url: bm.URL, tags: bm.Tags}
 		m.favorites = append(m.favorites, f)
 		m.byKey[bm.Key] = f
 	}
@@ -96,8 +98,8 @@ func (m Leader) handleRune(s string) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	case "/":
-		// Search mode arrives in Phase 4.
-		return m, nil
+		search := NewSearch(m.browser, m.all)
+		return search, search.Init()
 	}
 	return m, nil
 }
@@ -107,37 +109,36 @@ func isUpper(s string) bool {
 	return len(r) == 1 && unicode.IsUpper(r[0])
 }
 
-var (
-	titleStyle = lipgloss.NewStyle().Bold(true)
-	keyStyle   = lipgloss.NewStyle().Bold(true)
-	hintStyle  = lipgloss.NewStyle().Faint(true)
-)
-
 func (m Leader) View() string {
 	if m.quitting {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("bml") + "\n\n")
+	b.WriteString(header("launcher") + "\n\n")
 	if len(m.favorites) == 0 {
 		b.WriteString(hintStyle.Render("  no favorites yet — add a key to a bookmark in `bml edit`") + "\n\n")
 	}
 	for _, f := range m.favorites {
-		b.WriteString("  " + keyStyle.Render(f.key) + "   " + f.name + "\n")
+		b.WriteString("  " + keyBadge.Render(f.key) + "  " + nameStyle.Render(f.name))
+		b.WriteString(renderTags(f.tags) + "\n")
 	}
-	b.WriteString("\n" + hintStyle.Render("  Shift+key new tab   /  search   q  quit") + "\n")
+	b.WriteString("\n" + hintStyle.Render("  Shift+key  new tab   ·   /  search   ·   q  quit") + "\n")
 	return b.String()
 }
 
-// RunLeader runs the leader-mode program and returns any error from acting on a
-// bookmark.
+// errer is implemented by both leader and search models so the runner can
+// surface an act error regardless of which mode the program ended in.
+type errer interface{ Err() error }
+
+// RunLeader runs the interactive program (starting in leader mode) and returns
+// any error from acting on a bookmark.
 func RunLeader(b browser.Browser, bookmarks []config.Bookmark) error {
 	final, err := tea.NewProgram(NewLeader(b, bookmarks)).Run()
 	if err != nil {
 		return err
 	}
-	if lm, ok := final.(Leader); ok {
-		return lm.Err()
+	if e, ok := final.(errer); ok {
+		return e.Err()
 	}
 	return nil
 }
