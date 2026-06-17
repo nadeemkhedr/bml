@@ -3,10 +3,10 @@ package cli
 import (
 	"io"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"bml/internal/browser"
+	"bml/internal/config"
 )
 
 // run executes the root command with args against a fresh fake backend.
@@ -20,14 +20,26 @@ func run(t *testing.T, args ...string) (*browser.Fake, error) {
 	return fake, cmd.Execute()
 }
 
-// tempConfig writes a bookmark file and returns its path.
-func tempConfig(t *testing.T, content string) string {
+// tempConfig writes a config dir containing bookmarks.toml and returns the dir.
+func tempConfig(t *testing.T, bookmarks string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "bookmarks.toml")
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	return tempDir(t, "", bookmarks)
+}
+
+// tempDir writes a config dir with config.toml (settings, if non-empty) and
+// bookmarks.toml, and returns the dir.
+func tempDir(t *testing.T, settings, bookmarks string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(config.BookmarksPath(dir), []byte(bookmarks), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return path
+	if settings != "" {
+		if err := os.WriteFile(config.SettingsPath(dir), []byte(settings), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
 }
 
 const sampleConfig = `
@@ -37,11 +49,13 @@ name = "GitHub"
 url = "https://github.com"
 `
 
-const groupedConfig = `
+const groupSettings = `
 [[group]]
 key = "w"
 name = "Work"
+`
 
+const groupedBookmarks = `
 [[bookmark]]
 key = "wt"
 name = "Work Tasks"
@@ -109,7 +123,7 @@ func TestRoot_UnboundKeyErrors(t *testing.T) {
 }
 
 func TestRoot_UsesConfiguredBrowser(t *testing.T) {
-	cfg := tempConfig(t, "browser = \"Arc\"\n"+sampleConfig)
+	cfg := tempDir(t, "browser = \"Arc\"\n", sampleConfig)
 	var gotApp string
 	cmd := NewRootCmd(func(app string) browser.Browser {
 		gotApp = app
@@ -127,7 +141,7 @@ func TestRoot_UsesConfiguredBrowser(t *testing.T) {
 }
 
 func TestRoot_KeySequenceResolves(t *testing.T) {
-	cfg := tempConfig(t, groupedConfig)
+	cfg := tempDir(t, groupSettings, groupedBookmarks)
 	fake, err := run(t, "--config", cfg, "wt")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -138,7 +152,7 @@ func TestRoot_KeySequenceResolves(t *testing.T) {
 }
 
 func TestRoot_KeySequenceWithNewTab(t *testing.T) {
-	cfg := tempConfig(t, groupedConfig)
+	cfg := tempDir(t, groupSettings, groupedBookmarks)
 	fake, err := run(t, "--config", cfg, "-n", "wt")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -149,7 +163,7 @@ func TestRoot_KeySequenceWithNewTab(t *testing.T) {
 }
 
 func TestRoot_GroupPrefixAloneErrors(t *testing.T) {
-	cfg := tempConfig(t, groupedConfig)
+	cfg := tempDir(t, groupSettings, groupedBookmarks)
 	fake, err := run(t, "--config", cfg, "w") // a group, not a bookmark
 	if err == nil {
 		t.Fatal("expected an error: 'w' is a group prefix, not a bookmark")

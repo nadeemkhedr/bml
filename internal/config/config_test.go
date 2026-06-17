@@ -8,17 +8,29 @@ import (
 	"testing"
 )
 
-func writeTemp(t *testing.T, content string) string {
+// bookmarksDir writes a config dir containing only bookmarks.toml and returns it.
+func bookmarksDir(t *testing.T, bookmarks string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "bookmarks.toml")
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	dir := t.TempDir()
+	if err := os.WriteFile(BookmarksPath(dir), []byte(bookmarks), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return path
+	return dir
+}
+
+// dirWith writes a config dir containing both config.toml (settings) and
+// bookmarks.toml, and returns it.
+func dirWith(t *testing.T, settings, bookmarks string) string {
+	t.Helper()
+	dir := bookmarksDir(t, bookmarks)
+	if err := os.WriteFile(SettingsPath(dir), []byte(settings), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 func TestLoad_Valid(t *testing.T) {
-	cfg, err := Load(writeTemp(t, `
+	cfg, err := Load(bookmarksDir(t, `
 [[bookmark]]
 key = "g"
 name = "GitHub"
@@ -44,9 +56,7 @@ url = "https://pkg.go.dev"
 }
 
 func TestLoad_ReadsBrowserSetting(t *testing.T) {
-	cfg, err := Load(writeTemp(t, `
-browser = "Google Chrome"
-
+	cfg, err := Load(dirWith(t, `browser = "Google Chrome"`, `
 [[bookmark]]
 name = "X"
 url = "https://x.com"
@@ -60,20 +70,20 @@ url = "https://x.com"
 }
 
 func TestBrowserSetting_ToleratesMissingFile(t *testing.T) {
-	if got := BrowserSetting(filepath.Join(t.TempDir(), "nope.toml")); got != "" {
-		t.Errorf("missing file should yield empty browser, got %q", got)
+	if got := BrowserSetting(t.TempDir()); got != "" {
+		t.Errorf("missing settings file should yield empty browser, got %q", got)
 	}
 }
 
 func TestBrowserSetting_ReadsValue(t *testing.T) {
-	path := writeTemp(t, "browser = \"Arc\"\n")
-	if got := BrowserSetting(path); got != "Arc" {
+	dir := dirWith(t, "browser = \"Arc\"\n", "")
+	if got := BrowserSetting(dir); got != "Arc" {
 		t.Errorf("BrowserSetting = %q, want %q", got, "Arc")
 	}
 }
 
 func TestLoad_DuplicateKeyErrors(t *testing.T) {
-	_, err := Load(writeTemp(t, `
+	_, err := Load(bookmarksDir(t, `
 [[bookmark]]
 key = "g"
 name = "GitHub"
@@ -93,16 +103,16 @@ url = "https://gitlab.com"
 }
 
 func TestLoad_MissingFieldsError(t *testing.T) {
-	if _, err := Load(writeTemp(t, "[[bookmark]]\nurl = \"https://x.com\"\n")); err == nil {
+	if _, err := Load(bookmarksDir(t, "[[bookmark]]\nurl = \"https://x.com\"\n")); err == nil {
 		t.Error("expected error for missing name")
 	}
-	if _, err := Load(writeTemp(t, "[[bookmark]]\nname = \"X\"\n")); err == nil {
+	if _, err := Load(bookmarksDir(t, "[[bookmark]]\nname = \"X\"\n")); err == nil {
 		t.Error("expected error for missing url")
 	}
 }
 
 func TestLoad_AcceptsMultiCharKey(t *testing.T) {
-	cfg, err := Load(writeTemp(t, `
+	cfg, err := Load(bookmarksDir(t, `
 [[bookmark]]
 key = "wt"
 name = "Work Tasks"
@@ -117,7 +127,7 @@ url = "https://tasks.example"
 }
 
 func TestLoad_KeyTooLongErrors(t *testing.T) {
-	_, err := Load(writeTemp(t, `
+	_, err := Load(bookmarksDir(t, `
 [[bookmark]]
 key = "wxyz"
 name = "Too Long"
@@ -129,7 +139,7 @@ url = "https://x.com"
 }
 
 func TestLoad_PrefixFreeViolationErrors(t *testing.T) {
-	_, err := Load(writeTemp(t, `
+	_, err := Load(bookmarksDir(t, `
 [[bookmark]]
 key = "w"
 name = "Work"
@@ -149,20 +159,26 @@ url = "https://wt.example"
 }
 
 func TestLoad_MissingFileWrapsNotExist(t *testing.T) {
-	_, err := Load(filepath.Join(t.TempDir(), "nope.toml"))
+	_, err := Load(t.TempDir()) // empty dir: no bookmarks.toml
 	if !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("missing file should wrap os.ErrNotExist, got %v", err)
+		t.Errorf("missing bookmarks file should wrap os.ErrNotExist, got %v", err)
 	}
 }
 
 func TestLoad_InvalidTOMLErrors(t *testing.T) {
-	if _, err := Load(writeTemp(t, "this is = not [valid")); err == nil {
-		t.Error("expected parse error for invalid TOML")
+	if _, err := Load(bookmarksDir(t, "this is = not [valid")); err == nil {
+		t.Error("expected parse error for invalid bookmarks TOML")
+	}
+}
+
+func TestLoad_InvalidSettingsTOMLErrors(t *testing.T) {
+	if _, err := Load(dirWith(t, "this is = not [valid", "[[bookmark]]\nname=\"X\"\nurl=\"https://x.com\"\n")); err == nil {
+		t.Error("expected parse error for invalid settings TOML")
 	}
 }
 
 func TestAppend_MergesByURLPreservingExisting(t *testing.T) {
-	cfg, err := Load(writeTemp(t, `
+	cfg, err := Load(bookmarksDir(t, `
 [[bookmark]]
 key = "g"
 name = "GitHub"
@@ -186,25 +202,24 @@ url = "https://github.com"
 	}
 }
 
-func TestRenderSave_RoundTrip(t *testing.T) {
+func TestSaveBookmarks_RoundTrip(t *testing.T) {
 	cfg := &Config{
-		Browser: "Arc",
 		Bookmarks: []Bookmark{
 			{Key: "g", Name: "GitHub", URL: "https://github.com", Tags: []string{"dev"}},
 			{Name: `Quote " and \ slash`, URL: "https://example.com"},
 		},
 	}
-	path := filepath.Join(t.TempDir(), "out.toml")
+	dir := t.TempDir()
 
-	if backup, err := Save(path, cfg); err != nil || backup != "" {
-		t.Fatalf("first Save: backup=%q err=%v", backup, err)
+	if backup, err := SaveBookmarks(dir, cfg); err != nil || backup != "" {
+		t.Fatalf("first SaveBookmarks: backup=%q err=%v", backup, err)
 	}
 
-	got, err := Load(path)
+	got, err := Load(dir)
 	if err != nil {
-		t.Fatalf("rendered config does not load: %v", err)
+		t.Fatalf("rendered bookmarks do not load: %v", err)
 	}
-	if got.Browser != "Arc" || len(got.Bookmarks) != 2 {
+	if len(got.Bookmarks) != 2 {
 		t.Fatalf("round-trip mismatch: %+v", got)
 	}
 	if got.Bookmarks[1].Name != `Quote " and \ slash` {
@@ -215,38 +230,52 @@ func TestRenderSave_RoundTrip(t *testing.T) {
 	}
 
 	// Second save backs up the existing file.
-	backup, err := Save(path, cfg)
+	backup, err := SaveBookmarks(dir, cfg)
 	if err != nil || backup == "" {
-		t.Fatalf("second Save should back up: backup=%q err=%v", backup, err)
+		t.Fatalf("second SaveBookmarks should back up: backup=%q err=%v", backup, err)
 	}
 	if !strings.HasSuffix(backup, ".bak") {
 		t.Errorf("backup path = %q", backup)
 	}
 }
 
-func TestRenderSave_PreservesGroups(t *testing.T) {
-	cfg := &Config{
-		Groups:    []Group{{Key: "w", Name: "Work"}},
-		Bookmarks: []Bookmark{{Key: "wt", Name: "Work Tasks", URL: "https://tasks.example"}},
-	}
-	path := filepath.Join(t.TempDir(), "out.toml")
-	if _, err := Save(path, cfg); err != nil {
+func TestSaveBookmarks_LeavesSettingsUntouched(t *testing.T) {
+	// The win of the two-file split: writing bookmarks never rewrites config.toml.
+	dir := dirWith(t, "browser = \"Arc\"\n[[group]]\nkey = \"w\"\nname = \"Work\"\n", "")
+	before, err := os.ReadFile(SettingsPath(dir))
+	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := Load(path)
+	cfg := &Config{Bookmarks: []Bookmark{{Name: "X", URL: "https://x.com"}}}
+	if _, err := SaveBookmarks(dir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(SettingsPath(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Errorf("SaveBookmarks must not modify config.toml")
+	}
+}
+
+func TestLoad_GroupsFromSettings(t *testing.T) {
+	cfg, err := Load(dirWith(t,
+		"[[group]]\nkey = \"w\"\nname = \"Work\"\n",
+		"[[bookmark]]\nkey = \"wt\"\nname = \"Work Tasks\"\nurl = \"https://tasks.example\"\n"))
 	if err != nil {
 		t.Fatalf("does not load: %v", err)
 	}
-	if name, ok := got.GroupName("w"); !ok || name != "Work" {
-		t.Errorf("group label not preserved: %q %v", name, ok)
+	if name, ok := cfg.GroupName("w"); !ok || name != "Work" {
+		t.Errorf("group label not loaded: %q %v", name, ok)
 	}
-	if _, ok := got.URLForKey("wt"); !ok {
-		t.Error("grouped bookmark not preserved")
+	if _, ok := cfg.URLForKey("wt"); !ok {
+		t.Error("grouped bookmark not loaded")
 	}
 }
 
 func TestLeaderTags_DefaultsTrue(t *testing.T) {
-	cfg, err := Load(writeTemp(t, "[[bookmark]]\nname=\"X\"\nurl=\"https://x.com\"\n"))
+	cfg, err := Load(bookmarksDir(t, "[[bookmark]]\nname=\"X\"\nurl=\"https://x.com\"\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,61 +284,54 @@ func TestLeaderTags_DefaultsTrue(t *testing.T) {
 	}
 }
 
-func TestLeaderTags_ExplicitFalseRoundTrips(t *testing.T) {
-	cfg, err := Load(writeTemp(t, "leader_tags = false\n[[bookmark]]\nname=\"X\"\nurl=\"https://x.com\"\n"))
+func TestLeaderTags_ExplicitFalse(t *testing.T) {
+	cfg, err := Load(dirWith(t, "leader_tags = false\n", "[[bookmark]]\nname=\"X\"\nurl=\"https://x.com\"\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.LeaderTags {
-		t.Fatal("leader_tags=false should disable tags")
-	}
-	// Saving and reloading must preserve the explicit false.
-	path := filepath.Join(t.TempDir(), "out.toml")
-	if _, err := Save(path, cfg); err != nil {
-		t.Fatal(err)
-	}
-	got, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.LeaderTags {
-		t.Error("leader_tags=false should survive a round-trip")
+		t.Error("leader_tags=false should disable tags")
 	}
 }
 
-func TestPath_Precedence(t *testing.T) {
+func TestDir_Precedence(t *testing.T) {
 	t.Setenv("BML_CONFIG", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
 
-	if got, _ := Path("/explicit/flag.toml"); got != "/explicit/flag.toml" {
+	if got, _ := Dir("/explicit/dir"); got != "/explicit/dir" {
 		t.Errorf("flag should win, got %q", got)
 	}
 
-	t.Setenv("BML_CONFIG", "/env/path.toml")
-	if got, _ := Path(""); got != "/env/path.toml" {
+	t.Setenv("BML_CONFIG", "/env/dir")
+	if got, _ := Dir(""); got != "/env/dir" {
 		t.Errorf("BML_CONFIG should win over default, got %q", got)
 	}
 
 	t.Setenv("BML_CONFIG", "")
 	t.Setenv("XDG_CONFIG_HOME", "/xdg")
-	if got, _ := Path(""); got != "/xdg/bml/bookmarks.toml" {
-		t.Errorf("XDG path = %q", got)
+	if got, _ := Dir(""); got != "/xdg/bml" {
+		t.Errorf("XDG dir = %q", got)
 	}
 }
 
-func TestWriteStarter_CreatesAndIsIdempotent(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sub", "bookmarks.toml")
+func TestWriteStarter_CreatesBothFilesAndIsIdempotent(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sub")
 
-	created, err := WriteStarter(path)
+	created, err := WriteStarter(dir)
 	if err != nil || !created {
 		t.Fatalf("first WriteStarter: created=%v err=%v", created, err)
 	}
+	for _, p := range []string{BookmarksPath(dir), SettingsPath(dir)} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("starter did not create %s: %v", p, err)
+		}
+	}
 	// The starter must itself be valid and loadable.
-	if _, err := Load(path); err != nil {
+	if _, err := Load(dir); err != nil {
 		t.Fatalf("starter config does not load: %v", err)
 	}
 
-	created, err = WriteStarter(path)
+	created, err = WriteStarter(dir)
 	if err != nil || created {
 		t.Fatalf("second WriteStarter should be a no-op: created=%v err=%v", created, err)
 	}

@@ -3,7 +3,7 @@
 A fast, keyboard-driven bookmark launcher for the terminal (macOS). Bare `bml`
 opens a which-key launcher; press a letter to **focus an already-open tab** for
 that site (or open it), Shift+letter to force a new tab. Press `/` to fuzzy-search
-your whole bookmark list.
+your whole bookmark list, or `s` to search the web.
 
 ```
 ▌ bml  launcher
@@ -12,7 +12,7 @@ your whole bookmark list.
    n   Hacker News   news
    m   Gmail         work
 
-  Shift+key  new tab   ·   /  search   ·   q  quit
+  Shift+key  new tab   ·   /  bookmarks   ·   s  search   ·   q  quit
 ```
 
 ## Install
@@ -45,30 +45,28 @@ Requires macOS and a Chromium-based browser (Brave, Chrome, Arc, or Edge).
 The first run writes a starter config and tells you where:
 
 ```sh
-bml            # opens the launcher (creates ~/.config/bml/bookmarks.toml on first run)
+bml            # opens the launcher (creates ~/.config/bml/{bookmarks,config}.toml on first run)
 bml edit       # edit your bookmarks in $EDITOR
 ```
 
 The first time bml controls your browser, macOS asks for **Automation**
 permission — approve it (System Settings → Privacy & Security → Automation).
 
-## Bookmarks file
+## Config files
 
-TOML, hand-edited, at `~/.config/bml/bookmarks.toml` (override with `--config` or
-`$BML_CONFIG`; `$XDG_CONFIG_HOME` is honored).
+bml uses a config **directory** (default `~/.config/bml`, override with `--config`
+or `$BML_CONFIG`; `$XDG_CONFIG_HOME` is honored) holding two hand-edited TOML files:
+
+- **`bookmarks.toml`** — your bookmark entries. `bml import` only ever rewrites
+  this file.
+- **`config.toml`** — settings: browser, `leader_tags`, search engines, and group
+  labels. Import never touches it.
+
+Edit them with `bml edit` (bookmarks) and `bml edit --settings` (config.toml).
+
+`bookmarks.toml`:
 
 ```toml
-# Optional: which macOS browser to drive (default "Brave Browser").
-# browser = "Google Chrome"
-
-# Optional: show tags next to bookmarks in leader mode (default true).
-# leader_tags = false
-
-# Optional: give a key-group prefix a friendly name in the menu.
-[[group]]
-key = "w"
-name = "Work"
-
 [[bookmark]]
 key = "g"            # optional 1–3 char leader key
 name = "GitHub"
@@ -87,9 +85,29 @@ url = "https://pkg.go.dev"
 tags = ["dev", "reference"]
 ```
 
+`config.toml`:
+
+```toml
+# Which macOS browser to drive (default "Brave Browser").
+# browser = "Google Chrome"
+
+# Show tags next to bookmarks in leader mode (default true).
+# leader_tags = false
+
+# Search engines (see "Search mode" below).
+# [search]
+# default_engine = "google"
+
+# Give a key-group prefix a friendly name in the menu.
+[[group]]
+key = "w"
+name = "Work"
+```
+
 - A bookmark needs a **name** and **url**.
 - An optional **key** (1–3 characters) binds it to the launcher. Multi-character
-  keys form **groups**: `wt` means press `w` (opens the Work group) then `t`.
+  keys form **groups**: `wt` means press `w` (opens the Work group) then `t`. A
+  key may not start with `s` (reserved for search mode).
 - Keys are **prefix-free** — a key can't be both a bookmark and a group prefix
   (no `w` *and* `wt`). Duplicate or conflicting keys are rejected on load.
 
@@ -103,13 +121,37 @@ tags = ["dev", "reference"]
 | `w` then `t`   | Navigate a group, then act (`wt`)                 |
 | Uppercase last | Force a new tab (`G`, or `wT`)                    |
 | `Backspace`    | Go up one group level                             |
-| `/`            | Enter search                                      |
+| `/`            | Enter bookmarks mode (fuzzy-find your bookmarks)  |
+| `s`            | Enter search mode (search the web)                |
 | `q` / `Esc` / `Ctrl-C` | Quit (`Esc` first leaves the current group) |
 
-### Search — `/`
+Because `s` enters search mode, no bookmark or group key may begin with `s` —
+such a key would be unreachable, and is rejected when the config loads.
+
+### Bookmarks mode — `/`
 
 Fuzzy-matches **name + url + tags**. Type to filter, `↑`/`↓` (or `Ctrl-n`/`Ctrl-p`)
 to move, `Enter` to focus/open, `Esc` to go back.
+
+### Search mode — `s`
+
+Type a free-text query and search the web. `Enter` searches with the **primary
+engine** (default `google`); `Tab` searches with the **secondary engine** (default
+`duckduckgo_lucky`, DuckDuckGo's "I'm feeling lucky" `!ducky` jump). Results always
+open in a new tab; `Esc` goes back.
+
+Engines are URL templates with an `{{input}}` placeholder. Built-ins are `google`,
+`duckduckgo`, and `duckduckgo_lucky`; choose which back the two keys, or define your
+own, in `config.toml`:
+
+```toml
+[search]
+default_engine   = "google"            # Enter
+secondary_engine = "duckduckgo_lucky"  # Tab
+
+[search.engines]
+kagi = "https://kagi.com/search?q={{input}}"
+```
 
 ### Command line
 
@@ -119,7 +161,8 @@ bml wt                # act on a grouped key sequence
 bml github.com        # act on a URL (scheme optional)
 bml -n github.com     # force a new tab
 bml -n wt             # force a new tab for a keyed bookmark
-bml edit              # open the bookmarks file in $EDITOR
+bml edit              # open bookmarks.toml in $EDITOR
+bml edit --settings   # open config.toml (browser, search engines, groups)
 ```
 
 A 1–3 character argument with no `.` is a **key sequence**; an argument with a
@@ -160,4 +203,5 @@ go build -o bml .
 ```
 
 Design notes: `CONTEXT.md` (glossary), `docs/adr/` (decisions),
-`docs/prd/` (requirements), `docs/plans/` (implementation plan).
+`docs/epics/<epic>/` (per-feature `prd.md` requirements and `plan.md`
+implementation plan).
