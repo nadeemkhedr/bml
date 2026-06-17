@@ -49,14 +49,14 @@ func NewRootCmd(mk BrowserFactory) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return tui.RunLeader(mk(cfg.Browser), cfg.Bookmarks, cfg.Groups, cfg.LeaderTags)
+				return tui.RunLeader(mk(cfg.Browser), cfg.Bookmarks, cfg.Groups, cfg.LeaderTags, cfg.Search)
 			}
 			return resolveAndAct(cmd, mk, configFlag, args[0], newTab)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&newTab, "new-tab", "n", false, "force a new tab instead of focusing an existing one")
-	cmd.PersistentFlags().StringVar(&configFlag, "config", "", "path to the bookmark file (default ~/.config/bml/bookmarks.toml)")
+	cmd.PersistentFlags().StringVar(&configFlag, "config", "", "path to the config directory (default ~/.config/bml)")
 
 	cmd.AddCommand(newEditCmd(&configFlag))
 	cmd.AddCommand(newImportCmd(&configFlag))
@@ -83,51 +83,59 @@ func resolveAndAct(cmd *cobra.Command, mk BrowserFactory, configFlag, arg string
 	if strings.Contains(arg, ".") {
 		// A raw URL doesn't require a valid config; still honor the browser
 		// setting if one is readable.
-		path, err := config.Path(configFlag)
+		dir, err := config.Dir(configFlag)
 		if err != nil {
 			return err
 		}
-		return mk(config.BrowserSetting(path)).OpenOrFocus(arg, forceNew)
+		return mk(config.BrowserSetting(dir)).OpenOrFocus(arg, forceNew)
 	}
 	return fmt.Errorf("%q is neither a key (1–3 chars) nor a URL", arg)
 }
 
-// loadOrInit resolves the config path, writing a starter file on first run, then
-// loads and validates it.
+// loadOrInit resolves the config directory, writing starter files on first run,
+// then loads and validates it.
 func loadOrInit(cmd *cobra.Command, configFlag string) (*config.Config, error) {
-	path, err := config.Path(configFlag)
+	dir, err := config.Dir(configFlag)
 	if err != nil {
 		return nil, err
 	}
-	created, err := config.WriteStarter(path)
+	created, err := config.WriteStarter(dir)
 	if err != nil {
 		return nil, fmt.Errorf("creating config: %w", err)
 	}
 	if created {
-		fmt.Fprintf(cmd.ErrOrStderr(), "bml: created a starter config at %s — edit it with `bml edit`\n", path)
+		fmt.Fprintf(cmd.ErrOrStderr(), "bml: created a starter config in %s — edit it with `bml edit`\n", dir)
 	}
-	return config.Load(path)
+	return config.Load(dir)
 }
 
-// newEditCmd opens the bookmark file in $EDITOR (creating a starter first run).
+// newEditCmd opens the bookmarks file in $EDITOR (creating starters on first
+// run), or config.toml with --settings.
 func newEditCmd(configFlag *string) *cobra.Command {
-	return &cobra.Command{
+	var settings bool
+	cmd := &cobra.Command{
 		Use:           "edit",
-		Short:         "open the bookmark file in $EDITOR",
+		Short:         "open the bookmarks file in $EDITOR (--settings for config.toml)",
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			path, err := config.Path(*configFlag)
+			dir, err := config.Dir(*configFlag)
 			if err != nil {
 				return err
 			}
-			if _, err := config.WriteStarter(path); err != nil {
+			if _, err := config.WriteStarter(dir); err != nil {
 				return fmt.Errorf("creating config: %w", err)
+			}
+			path := config.BookmarksPath(dir)
+			if settings {
+				path = config.SettingsPath(dir)
 			}
 			return openEditor(cmd, path)
 		},
 	}
+	cmd.Flags().BoolVar(&settings, "settings", false, "edit config.toml (settings) instead of bookmarks.toml")
+	return cmd
 }
 
 // newImportCmd imports bookmarks from a Chromium browser into the config,
@@ -162,24 +170,27 @@ func newImportCmd(configFlag *string) *cobra.Command {
 				return err
 			}
 
-			path, err := config.Path(*configFlag)
+			dir, err := config.Dir(*configFlag)
 			if err != nil {
 				return err
 			}
 
+			// Import only ever rewrites bookmarks.toml; settings in config.toml are
+			// untouched. --replace starts from an empty list; the default merges
+			// into the existing bookmarks, preserving keyed favorites.
 			cfg := &config.Config{}
-			if replace {
-				cfg.Browser = config.BrowserSetting(path) // keep the browser setting
-			} else if existing, err := config.Load(path); err == nil {
-				cfg = existing
-			} else if !os.IsNotExist(err) {
-				return err // an existing-but-broken config shouldn't be silently clobbered
+			if !replace {
+				if existing, err := config.Load(dir); err == nil {
+					cfg = existing
+				} else if !os.IsNotExist(err) {
+					return err // an existing-but-broken config shouldn't be silently clobbered
+				}
 			}
 
 			added := cfg.Append(imported)
 
 			if dryRun {
-				text, err := config.Render(cfg)
+				text, err := config.RenderBookmarks(cfg)
 				if err != nil {
 					return err
 				}
@@ -189,15 +200,15 @@ func newImportCmd(configFlag *string) *cobra.Command {
 				return nil
 			}
 
-			backup, err := config.Save(path, cfg)
+			backup, err := config.SaveBookmarks(dir, cfg)
 			if err != nil {
 				return err
 			}
 			if backup != "" {
-				fmt.Fprintf(cmd.ErrOrStderr(), "backed up previous config to %s\n", backup)
+				fmt.Fprintf(cmd.ErrOrStderr(), "backed up previous bookmarks to %s\n", backup)
 			}
 			fmt.Fprintf(cmd.ErrOrStderr(), "imported %d new bookmark(s) from %s — %d total → %s\n",
-				added, src.App, len(cfg.Bookmarks), path)
+				added, src.App, len(cfg.Bookmarks), config.BookmarksPath(dir))
 			return nil
 		},
 	}

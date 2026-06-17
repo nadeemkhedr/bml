@@ -1,5 +1,5 @@
-// Package tui holds bml's interactive Bubble Tea models: leader mode and search
-// mode.
+// Package tui holds bml's interactive Bubble Tea models: leader mode, bookmarks
+// mode (the "/" fuzzy finder), and search mode (the "s" web search).
 package tui
 
 import (
@@ -34,12 +34,13 @@ type favorite struct {
 // are 1–3 character sequences; pressing characters navigates through groups
 // until a bookmark is reached.
 type Leader struct {
-	browser   browser.Browser
-	all       []config.Bookmark // full list, handed to search mode
-	groups    []config.Group
-	showTags  bool
-	favorites []favorite
-	byKey     map[string]favorite
+	browser       browser.Browser
+	all           []config.Bookmark // full list, handed to bookmarks/search mode
+	groups        []config.Group
+	showTags      bool
+	search        config.Search // resolved engines, handed to search mode
+	favorites     []favorite
+	byKey         map[string]favorite
 	groupName     map[string]string
 	prefix        string // characters typed so far at the current depth
 	width, height int
@@ -48,14 +49,15 @@ type Leader struct {
 }
 
 // NewLeader builds the leader model from the bookmark list (keyed bookmarks
-// become navigable favorites), the optional group labels, and whether to show
-// tags.
-func NewLeader(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool) Leader {
+// become navigable favorites), the optional group labels, whether to show tags,
+// and the resolved search-engine config.
+func NewLeader(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool, search config.Search) Leader {
 	m := Leader{
 		browser:   b,
 		all:       bookmarks,
 		groups:    groups,
 		showTags:  showTags,
+		search:    search,
 		byKey:     make(map[string]favorite),
 		groupName: make(map[string]string),
 	}
@@ -132,15 +134,19 @@ func (m Leader) handleRune(s string) (tea.Model, tea.Cmd) {
 	}
 
 	if m.prefix == "" {
-		switch s {
+		switch strings.ToLower(s) {
 		case "q":
 			m.quitting = true
 			return m, tea.Quit
 		case "/":
-			search := NewSearch(m.browser, m.all, m.groups, m.showTags)
+			search := NewSearch(m.browser, m.all, m.groups, m.showTags, m.search)
 			search.width, search.height = m.width, m.height // bubbletea won't resend size on a model swap
 			search.clamp()
 			return search, search.Init()
+		case "s":
+			web := NewWebSearch(m.browser, m.all, m.groups, m.showTags, m.search)
+			web.width, web.height = m.width, m.height // bubbletea won't resend size on a model swap
+			return web, web.Init()
 		}
 	}
 	return m, nil // stray key inside a group — ignore
@@ -164,10 +170,10 @@ func isUpper(s string) bool {
 // child is one entry in the menu at the current depth: either a bookmark (leaf)
 // or a group to descend into.
 type child struct {
-	ch    string
-	leaf  bool
-	name  string
-	tags  []string
+	ch   string
+	leaf bool
+	name string
+	tags []string
 }
 
 // children returns the menu items reachable by one more keystroke from the
@@ -258,7 +264,7 @@ func (m Leader) treeLines(prefix string, depth int) []string {
 
 func (m Leader) footer() string {
 	if m.prefix == "" {
-		return "  Shift+key  new tab   ·   /  search   ·   q  quit"
+		return "  Shift+key  new tab   ·   /  bookmarks   ·   s  search   ·   q  quit"
 	}
 	return "  Shift+key  new tab   ·   ⌫  back   ·   esc  top"
 }
@@ -269,8 +275,8 @@ type errer interface{ Err() error }
 
 // RunLeader runs the interactive program (starting in leader mode) and returns
 // any error from acting on a bookmark.
-func RunLeader(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool) error {
-	final, err := tea.NewProgram(NewLeader(b, bookmarks, groups, showTags), tea.WithAltScreen()).Run()
+func RunLeader(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool, search config.Search) error {
+	final, err := tea.NewProgram(NewLeader(b, bookmarks, groups, showTags, search), tea.WithAltScreen()).Run()
 	if err != nil {
 		return err
 	}

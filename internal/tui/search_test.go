@@ -4,13 +4,14 @@ import (
 	"testing"
 
 	"bml/internal/browser"
+	"bml/internal/config"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func newSearch() (Search, *browser.Fake) {
 	fake := &browser.Fake{}
-	return NewSearch(fake, corpus(), nil, true), fake
+	return NewSearch(fake, corpus(), nil, true, config.DefaultSearch()), fake
 }
 
 // typeQuery feeds each rune of s to the model, returning the updated model.

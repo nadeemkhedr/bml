@@ -17,13 +17,15 @@ const defaultVisible = 10
 // footer lines): logo, query, count, blank, blank, hint.
 const searchChrome = 6
 
-// Search is the fuzzy finder entered from leader mode with "/". It matches over
-// name, url, and tags, and acts on the selected bookmark with Enter.
+// Search is bookmarks mode: the fuzzy finder entered from leader mode with "/".
+// It matches over name, url, and tags, and acts on the selected bookmark with
+// Enter.
 type Search struct {
 	browser       browser.Browser
 	all           []config.Bookmark
 	groups        []config.Group
-	showTags      bool // carried so returning to leader preserves the setting
+	showTags      bool          // carried so returning to leader preserves the setting
+	search        config.Search // carried so returning to leader preserves search-mode engines
 	input         textinput.Model
 	results       []Result
 	cursor        int
@@ -33,14 +35,14 @@ type Search struct {
 	quitting      bool
 }
 
-// NewSearch builds the search model over the full bookmark list.
-func NewSearch(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool) Search {
+// NewSearch builds the bookmarks-mode model over the full bookmark list.
+func NewSearch(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool, search config.Search) Search {
 	in := textinput.New()
 	in.Placeholder = "search bookmarks…"
 	in.Prompt = ""
 	in.Focus()
 
-	m := Search{browser: b, all: bookmarks, groups: groups, showTags: showTags, input: in}
+	m := Search{browser: b, all: bookmarks, groups: groups, showTags: showTags, search: search, input: in}
 	m.results = Filter(bookmarks, "")
 	return m
 }
@@ -69,7 +71,7 @@ func (m Search) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case tea.KeyEsc:
 			// Back to leader mode, carrying the known size (no resize needed).
-			leader := NewLeader(m.browser, m.all, m.groups, m.showTags)
+			leader := NewLeader(m.browser, m.all, m.groups, m.showTags, m.search)
 			leader.width, leader.height = m.width, m.height
 			return leader, nil
 		case tea.KeyEnter:
@@ -137,7 +139,7 @@ func (m Search) View() string {
 		return ""
 	}
 	head := []string{
-		header("search"),
+		header("bookmarks"),
 		"  " + promptStr.Render("/ ") + m.input.View(),
 		"  " + hintStyle.Render(fmt.Sprintf("%d result%s", len(m.results), plural(len(m.results)))),
 		"",

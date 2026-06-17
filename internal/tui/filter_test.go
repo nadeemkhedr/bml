@@ -103,7 +103,7 @@ func TestFilter_EmptyQueryNoTagMatch(t *testing.T) {
 
 func TestFilter_TierOrdering(t *testing.T) {
 	bms := []config.Bookmark{
-		{Name: "Animal Theme", URL: "https://a.com"},   // scatter: a-n-i-m..e
+		{Name: "Animal Theme", URL: "https://a.com"},    // scatter: a-n-i-m..e
 		{Name: "Myanimex", URL: "https://b.com"},        // substring, mid-word
 		{Name: "Idle Anime List", URL: "https://c.com"}, // begins a word
 		{Name: "Anime Hub", URL: "https://d.com"},       // field prefix
@@ -119,7 +119,7 @@ func TestFilter_TierOrdering(t *testing.T) {
 
 func TestFilter_TierBeatsField(t *testing.T) {
 	bms := []config.Bookmark{
-		{Name: "Animal Theme", URL: "https://x.com"},            // name scatter
+		{Name: "Animal Theme", URL: "https://x.com"},                   // name scatter
 		{Name: "Zebra", URL: "https://y.com", Tags: []string{"anime"}}, // tag prefix
 	}
 	got := names(Filter(bms, "anime"))
