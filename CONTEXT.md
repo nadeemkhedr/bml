@@ -92,4 +92,37 @@ owns its own focus-or-open mechanism and matching. v1 ships a single backend —
 **macOS Chromium** (runs AppleScript via `osascript`), which covers all
 Chromium browsers (Brave/Chrome/Arc/Edge) by parameterizing the app name.
 Additional platforms/browsers (Safari, Firefox, Linux, Windows) are added as new
-backends without touching leader/search/CLI code.
+backends without touching leader/search/CLI code. A backend may additionally
+implement **tab listing** to power **tab mode**.
+
+### Open tab
+A live tab currently open in the configured browser, captured as a `{title, url}`
+pair. Distinct from a **bookmark** (a stored, hand-curated URL): an open tab is
+ephemeral browser state, enumerated on demand, never persisted. The entity
+**tab mode** lists and focuses. _Avoid_: calling it a bookmark, or a "session".
+
+### Tab mode
+A mode entered from leader mode via the **Tab key** that lists the **open tabs**
+of the configured browser and fuzzy-filters them (over title + URL, like
+**bookmarks mode**); selecting one **focuses** that tab via the existing
+**act on a URL** path (its full URL passed to `OpenOrFocus`, which substring-
+matches it back to the live tab), then exits. Read-only: it never opens, closes,
+or rearranges tabs in v1 — a pure switcher. Because focusing re-matches by URL
+substring, two open tabs sharing a URL prefix may resolve to the wrong one; this
+is an accepted v1 limitation, not a bug.
+
+The trigger is the **Tab key** (not a printable letter), so unlike `s` and `/`
+it reserves no character from the bookmark **keyspace**. Note "Tab" is overloaded
+deliberately: the **Tab key** enters tab mode at the leader level, while in
+**search mode** Tab dispatches the **secondary engine** — different modes, no
+collision.
+
+### Tab listing
+The capability of enumerating the configured browser's **open tabs**, exposed as
+a separate optional interface (`TabLister`) rather than widening the core
+**browser backend** seam — a backend that cannot (or chooses not to) enumerate
+tabs simply does not implement it, and **tab mode** is unavailable on it. The
+macOS Chromium backend implements it with a **read-only** AppleScript that does
+*not* `activate` the browser (listing must never steal focus) and does not launch
+the browser when it is not running (guarded by `is running`, yielding an empty
+list instead).

@@ -1,5 +1,6 @@
 // Package tui holds bml's interactive Bubble Tea models: leader mode, bookmarks
-// mode (the "/" fuzzy finder), and search mode (the "s" web search).
+// mode (the "/" fuzzy finder), search mode (the "s" web search), and tab mode
+// (the Tab-key switcher over the browser's open tabs).
 package tui
 
 import (
@@ -108,6 +109,8 @@ func (m Leader) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.prefix = string(r[:len(r)-1])
 			}
 			return m, nil
+		case tea.KeyTab:
+			return m.enterTabs()
 		case tea.KeyRunes:
 			return m.handleRune(string(msg.Runes))
 		}
@@ -150,6 +153,23 @@ func (m Leader) handleRune(s string) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil // stray key inside a group — ignore
+}
+
+// enterTabs switches to tab mode. It only fires at the top level (the Tab key is
+// ignored while navigating a group), and only if the backend can enumerate tabs —
+// otherwise it is a silent no-op.
+func (m Leader) enterTabs() (tea.Model, tea.Cmd) {
+	if m.prefix != "" {
+		return m, nil
+	}
+	lister, ok := m.browser.(browser.TabLister)
+	if !ok {
+		return m, nil
+	}
+	tabs := NewTabs(m.browser, lister, m.all, m.groups, m.showTags, m.search)
+	tabs.width, tabs.height = m.width, m.height // bubbletea won't resend size on a model swap
+	tabs.clamp()
+	return tabs, tabs.Init()
 }
 
 // hasPrefix reports whether any key starts with p (and is longer than it).
@@ -264,7 +284,7 @@ func (m Leader) treeLines(prefix string, depth int) []string {
 
 func (m Leader) footer() string {
 	if m.prefix == "" {
-		return "  Shift+key  new tab   ·   /  bookmarks   ·   s  search   ·   q  quit"
+		return "  Shift+key  new tab   ·   /  bookmarks   ·   s  search   ·   ⇥  tabs   ·   q  quit"
 	}
 	return "  Shift+key  new tab   ·   ⌫  back   ·   esc  top"
 }

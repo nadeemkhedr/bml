@@ -26,6 +26,11 @@ var (
 	urlStyle   = lipgloss.NewStyle().Foreground(subtle)
 	hintStyle  = lipgloss.NewStyle().Foreground(subtle)
 
+	// Tab mode: a bold title with a faint, dimmer "(friendly url)" beside it.
+	// A terminal has no font sizes, so "smaller" is rendered as faint.
+	tabTitle = lipgloss.NewStyle().Foreground(fg).Bold(true)
+	tabURL   = lipgloss.NewStyle().Foreground(subtle).Faint(true)
+
 	// A tag pill (and per-character styles for highlighting matched runes while
 	// keeping the pill background).
 	pillBg    = lipgloss.AdaptiveColor{Light: "#EDE9FE", Dark: "#2A2540"}
