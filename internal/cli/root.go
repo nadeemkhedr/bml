@@ -11,6 +11,7 @@ import (
 
 	"bml/internal/browser"
 	"bml/internal/config"
+	"bml/internal/history"
 	"bml/internal/importer"
 	"bml/internal/tui"
 
@@ -49,7 +50,11 @@ func NewRootCmd(mk BrowserFactory) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return tui.RunLeader(mk(cfg.Browser), cfg.Bookmarks, cfg.Groups, cfg.LeaderTags, cfg.Search)
+				dir, err := config.Dir(configFlag)
+				if err != nil {
+					return err
+				}
+				return tui.RunLeader(mk(cfg.Browser), cfg.Bookmarks, cfg.Groups, cfg.LeaderTags, cfg.Search, history.Load(dir))
 			}
 			return resolveAndAct(cmd, mk, configFlag, args[0], newTab)
 		},
@@ -60,6 +65,44 @@ func NewRootCmd(mk BrowserFactory) *cobra.Command {
 
 	cmd.AddCommand(newEditCmd(&configFlag))
 	cmd.AddCommand(newImportCmd(&configFlag))
+	cmd.AddCommand(newHistoryCmd(&configFlag))
+	return cmd
+}
+
+// newHistoryCmd manages the learned-ranking history. v1 exposes only `clear`,
+// the reset/privacy valve for a feature that silently reorders bookmarks mode.
+func newHistoryCmd(configFlag *string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:           "history",
+		Short:         "manage learned bookmark ranking",
+		Args:          cobra.NoArgs,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
+	clear := &cobra.Command{
+		Use:           "clear",
+		Short:         "forget all learned bookmark ranking",
+		Args:          cobra.NoArgs,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			dir, err := config.Dir(*configFlag)
+			if err != nil {
+				return err
+			}
+			path := history.Path(dir)
+			if err := os.Remove(path); err != nil {
+				if os.IsNotExist(err) {
+					fmt.Fprintln(cmd.ErrOrStderr(), "bml: no history to clear")
+					return nil
+				}
+				return err
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "bml: cleared %s\n", path)
+			return nil
+		},
+	}
+	cmd.AddCommand(clear)
 	return cmd
 }
 

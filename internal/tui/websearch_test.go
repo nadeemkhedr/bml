@@ -11,7 +11,7 @@ import (
 
 func newWebSearch() (WebSearch, *browser.Fake) {
 	fake := &browser.Fake{}
-	return NewWebSearch(fake, corpus(), nil, true, config.DefaultSearch()), fake
+	return NewWebSearch(fake, corpus(), nil, true, config.DefaultSearch(), nil), fake
 }
 
 // typeWeb feeds each rune of s to the model, returning the updated model.

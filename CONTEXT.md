@@ -27,10 +27,13 @@ promotes it into **leader mode**. Every bookmark (keyed or not) is reachable via
 
 ### Config directory
 The directory (default `~/.config/bml`, overridable with `--config` or
-`$BML_CONFIG`) holding two files: `bookmarks.toml` (the **bookmark** entries) and
+`$BML_CONFIG`) holding three files: `bookmarks.toml` (the **bookmark** entries),
 `config.toml` (settings — browser, `leader_tags`, the **search engine** config,
-and **group** labels). They are split so `bml import` only ever rewrites
-`bookmarks.toml` and can never clobber hand-curated settings.
+and **group** labels), and `history.toml` (the **learned ranking** record). The
+first two are hand-curated; `history.toml` is machine-maintained and never
+hand-edited. They are split so `bml import` only ever rewrites `bookmarks.toml`
+and can never clobber hand-curated settings, and so usage history is isolated
+from both.
 
 ### Key (key sequence)
 A bookmark's optional leader binding: 1–3 characters typed in turn (e.g. `g` or
@@ -52,8 +55,30 @@ Not a separate entity — a **favorite** is simply a bookmark that carries a
 ### Bookmarks mode
 A mode entered from leader mode (via `/`) that fuzzy-filters the full set of
 bookmarks (matching name, URL, and tags) and acts on the chosen one. Named for
-what it browses, not the **bookmark** entity itself.
+what it browses, not the **bookmark** entity itself. Among the matches, ordering
+reflects **learned ranking** on top of raw match relevance.
 _Avoid_: Search mode (now reserved for web search), filter mode, find mode.
+
+### Selection
+The act of choosing a bookmark in **bookmarks mode** — acting on it, whether the
+default action or a force-new-tab. A selection is the single event that teaches
+**learned ranking**: it credits the chosen **bookmark** under the **query** that
+was in the box at that moment. Leader-mode **key** presses are deterministic and
+teach nothing; only bookmarks-mode selections are learned. Distinct from merely
+highlighting a row while browsing.
+
+### Learned ranking
+An adaptive boost applied to **bookmarks mode** ordering, derived from past
+**selections** so that the bookmarks a user habitually picks rise toward the top.
+Two signals combine: a **query**-keyed signal (for the typed query `en`, the
+bookmark usually chosen for `en` is favored) which dominates, and a
+query-independent global signal (a broadly popular bookmark is favored even for a
+never-before-typed query) as fallback. Both decay over time so habits fade rather
+than ossify. The raw match still **gates** which bookmarks appear and supplies the
+base relevance; learned ranking only reorders within that matched set. A bookmark
+is identified by its **URL** (editing a bookmark's URL orphans its history).
+_Avoid_: calling it "search history", "frequency" alone (recency matters too), or
+treating it as a query log for any purpose other than ranking.
 
 ### Search mode
 A mode entered from leader mode (via `s`) that sends a free-text **query** to a

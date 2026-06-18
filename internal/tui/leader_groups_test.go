@@ -17,7 +17,7 @@ func groupedModel() (Leader, *browser.Fake) {
 		{Key: "wc", Name: "Work Calendar", URL: "https://cal.example"},
 	}
 	groups := []config.Group{{Key: "w", Name: "Work"}}
-	return NewLeader(fake, bms, groups, true, config.DefaultSearch()), fake
+	return NewLeader(fake, bms, groups, true, config.DefaultSearch(), nil), fake
 }
 
 func descend(t *testing.T, m Leader, s string) Leader {
