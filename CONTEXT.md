@@ -11,6 +11,14 @@ Presents **favorites** navigable by **key sequence** (which-key style): pressing
 characters drills through **groups** until a bookmark is reached, which acts
 immediately (no Enter). Modeled on "leader key" launchers. Curated by hand.
 
+Favorites can alternatively be **browsed**: arrow keys move a selection over the
+reachable bookmarks and Enter acts on the highlighted one. Browsing is a
+discovery aid layered on top of — and subordinate to — the **key sequence**
+path: the keys remain authoritative (typing one always acts immediately,
+ignoring any selection), the selection is latent until an arrow is pressed, and
+it never offers "force a new tab" (that stays on the keyed path). It exists so a
+favorite can be reached without knowing its **key**.
+
 ### Bookmark
 A stored URL entry — the single core entity. All bookmarks live in one flat
 list, in `bookmarks.toml`. A bookmark may optionally carry a **key**, which
