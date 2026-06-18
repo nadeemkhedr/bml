@@ -44,6 +44,9 @@ type Leader struct {
 	byKey         map[string]favorite
 	groupName     map[string]string
 	prefix        string // characters typed so far at the current depth
+	cursor        int    // index into the reachable leaves, when browsing
+	offset        int    // first rendered line shown (scroll window)
+	cursorActive  bool   // a leaf is selected (latent until the first arrow press)
 	width, height int
 	err           error
 	quitting      bool
@@ -90,6 +93,7 @@ func (m Leader) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.clamp()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -100,6 +104,7 @@ func (m Leader) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyEsc:
 			if m.prefix != "" {
 				m.prefix = "" // back to the top level
+				m.resetCursor()
 				return m, nil
 			}
 			m.quitting = true
@@ -107,6 +112,20 @@ func (m Leader) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyBackspace:
 			if r := []rune(m.prefix); len(r) > 0 {
 				m.prefix = string(r[:len(r)-1])
+				m.resetCursor()
+			}
+			return m, nil
+		case tea.KeyUp, tea.KeyCtrlP:
+			m.moveCursor(-1)
+			return m, nil
+		case tea.KeyDown, tea.KeyCtrlN:
+			m.moveCursor(1)
+			return m, nil
+		case tea.KeyEnter:
+			// Acts only once an arrow has revealed a selection; latent Enter is
+			// a no-op so a stray press on the opening screen does nothing.
+			if f, ok := m.byKey[m.selectedKey()]; ok {
+				return m, act(m.browser, f.url, false)
 			}
 			return m, nil
 		case tea.KeyTab:
@@ -133,6 +152,7 @@ func (m Leader) handleRune(s string) (tea.Model, tea.Cmd) {
 	}
 	if m.hasPrefix(next) {
 		m.prefix = next // descend into the group
+		m.resetCursor() // a fresh view starts with no selection
 		return m, nil
 	}
 
@@ -170,6 +190,119 @@ func (m Leader) enterTabs() (tea.Model, tea.Cmd) {
 	tabs.width, tabs.height = m.width, m.height // bubbletea won't resend size on a model swap
 	tabs.clamp()
 	return tabs, tabs.Init()
+}
+
+// resetCursor drops back to no selection. Called whenever the view re-roots
+// (descending via a typed key, or backing out with Esc/Backspace), since the
+// reachable leaves change and a carried-over index would be meaningless.
+func (m *Leader) resetCursor() {
+	m.cursorActive = false
+	m.cursor = 0
+	m.offset = 0
+}
+
+// moveCursor browses the reachable leaves. The first press reveals the latent
+// selection (Down lands on the first leaf, Up on the last); later presses step
+// and clamp. Typed keys remain the authoritative path — this only adds an
+// alternative way to reach a favorite without knowing its key.
+func (m *Leader) moveCursor(delta int) {
+	leaves := m.leaves()
+	if len(leaves) == 0 {
+		return
+	}
+	if !m.cursorActive {
+		m.cursorActive = true
+		if delta < 0 {
+			m.cursor = len(leaves) - 1
+		} else {
+			m.cursor = 0
+		}
+	} else {
+		m.cursor += delta
+	}
+	m.clamp()
+}
+
+// leaves returns the full keys of every reachable bookmark under the current
+// prefix, in the same depth-first order renderBody draws them. The browse
+// cursor is an index into this slice; group headers are skipped.
+func (m Leader) leaves() []string {
+	var out []string
+	var walk func(prefix string)
+	walk = func(prefix string) {
+		for _, c := range m.childrenOf(prefix) {
+			full := prefix + c.ch
+			if c.leaf {
+				out = append(out, full)
+			} else {
+				walk(full)
+			}
+		}
+	}
+	walk(m.prefix)
+	return out
+}
+
+// selectedKey is the full key of the leaf under the cursor, or "" when the
+// selection is latent or out of range (so Enter is a no-op).
+func (m Leader) selectedKey() string {
+	if !m.cursorActive {
+		return ""
+	}
+	leaves := m.leaves()
+	if m.cursor < 0 || m.cursor >= len(leaves) {
+		return ""
+	}
+	return leaves[m.cursor]
+}
+
+// leaderChrome is the number of non-body rows (header + blank, then blank +
+// footer) — matching frame's reserved space so the scroll window fills the rest.
+const leaderChrome = 4
+
+// visibleCount is how many rendered body lines fit between header and footer.
+func (m Leader) visibleCount() int {
+	if m.height <= 0 {
+		return defaultVisible
+	}
+	n := m.height - leaderChrome
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
+// clamp keeps the cursor in range and scrolls the window so the selected leaf's
+// rendered line stays visible. With no selection the window rests at the top.
+func (m *Leader) clamp() {
+	leaves := m.leaves()
+	if len(leaves) == 0 {
+		m.resetCursor()
+		return
+	}
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+	if m.cursor > len(leaves)-1 {
+		m.cursor = len(leaves) - 1
+	}
+
+	lines, selLine := m.renderBody()
+	vis := m.visibleCount()
+	if selLine >= 0 {
+		if selLine < m.offset {
+			m.offset = selLine
+		}
+		if selLine >= m.offset+vis {
+			m.offset = selLine - vis + 1
+		}
+	}
+	if maxOff := len(lines) - vis; m.offset > maxOff {
+		m.offset = maxOff
+	}
+	if m.offset < 0 {
+		m.offset = 0
+	}
 }
 
 // hasPrefix reports whether any key starts with p (and is longer than it).
@@ -251,42 +384,73 @@ func (m Leader) View() string {
 	head := []string{header(m.breadcrumb()), ""}
 	foot := []string{"", hintStyle.Render(m.footer())}
 
-	body := m.treeLines(m.prefix, 0)
-	if len(body) == 0 {
-		body = []string{hintStyle.Render("  no favorites yet — add a key to a bookmark in `bml edit`")}
+	lines, _ := m.renderBody()
+	if len(lines) == 0 {
+		body := []string{hintStyle.Render("  no favorites yet — add a key to a bookmark in `bml edit`")}
+		return frame(m.width, m.height, head, body, foot)
 	}
-	return frame(m.width, m.height, head, body, foot)
+	return frame(m.width, m.height, head, m.scrollWindow(lines), foot)
 }
 
-// treeLines renders the menu rooted at prefix as a slice of lines, expanding
-// groups inline with their children indented one level deeper.
-func (m Leader) treeLines(prefix string, depth int) []string {
-	indent := strings.Repeat("  ", depth*2+1)
-	var lines []string
-	for _, c := range m.childrenOf(prefix) {
-		if c.leaf {
-			row := indent + keyBadge.Render(c.ch) + "  " + nameStyle.Render(c.name)
-			if m.showTags {
-				row += renderTags(c.tags)
-			}
-			lines = append(lines, row)
-			continue
-		}
-		label := c.name
-		if label == "" {
-			label = "group"
-		}
-		lines = append(lines, indent+keyBadge.Render(c.ch)+"  "+groupHeader.Render("["+label+"]"))
-		lines = append(lines, m.treeLines(prefix+c.ch, depth+1)...)
+// scrollWindow slices the rendered lines to the visible window starting at the
+// scroll offset. When everything fits it returns the lines unchanged.
+func (m Leader) scrollWindow(lines []string) []string {
+	vis := m.visibleCount()
+	if len(lines) <= vis {
+		return lines
 	}
-	return lines
+	end := m.offset + vis
+	if end > len(lines) {
+		end = len(lines)
+	}
+	return lines[m.offset:end]
+}
+
+// renderBody renders the menu rooted at the current prefix, expanding groups
+// inline with their children indented one level deeper. It marks the selected
+// leaf with the cursor bar and reports that leaf's rendered line index (-1 when
+// the selection is latent), which the scroll window keeps in view.
+func (m Leader) renderBody() (lines []string, selLine int) {
+	sel := m.selectedKey()
+	selLine = -1
+	var walk func(prefix string, depth int)
+	walk = func(prefix string, depth int) {
+		indent := strings.Repeat("  ", depth*2+1)
+		for _, c := range m.childrenOf(prefix) {
+			full := prefix + c.ch
+			if c.leaf {
+				marker, name := indent, nameStyle
+				if full == sel {
+					// Swap the two trailing indent spaces for the cursor bar so
+					// columns stay aligned with the unselected rows.
+					marker = indent[:len(indent)-2] + cursorBar.Render("▌ ")
+					name = selName
+					selLine = len(lines)
+				}
+				row := marker + keyBadge.Render(c.ch) + "  " + name.Render(c.name)
+				if m.showTags {
+					row += renderTags(c.tags)
+				}
+				lines = append(lines, row)
+				continue
+			}
+			label := c.name
+			if label == "" {
+				label = "group"
+			}
+			lines = append(lines, indent+keyBadge.Render(c.ch)+"  "+groupHeader.Render("["+label+"]"))
+			walk(full, depth+1)
+		}
+	}
+	walk(m.prefix, 0)
+	return lines, selLine
 }
 
 func (m Leader) footer() string {
 	if m.prefix == "" {
-		return "  Shift+key  new tab   ·   /  bookmarks   ·   s  search   ·   ⇥  tabs   ·   q  quit"
+		return "  ↑↓  browse   ·   ↵  open   ·   Shift+key  new tab   ·   /  bookmarks   ·   s  search   ·   ⇥  tabs   ·   q  quit"
 	}
-	return "  Shift+key  new tab   ·   ⌫  back   ·   esc  top"
+	return "  ↑↓  browse   ·   ↵  open   ·   Shift+key  new tab   ·   ⌫  back   ·   esc  top"
 }
 
 // errer is implemented by both leader and search models so the runner can

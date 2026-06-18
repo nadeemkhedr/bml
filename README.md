@@ -2,9 +2,10 @@
 
 A fast, keyboard-driven bookmark launcher for the terminal (macOS). Bare `bml`
 opens a which-key launcher; press a letter to **focus an already-open tab** for
-that site (or open it), Shift+letter to force a new tab. Press `/` to fuzzy-search
-your whole bookmark list, `s` to search the web, or `Tab` to switch between your
-browser's currently open tabs.
+that site (or open it), Shift+letter to force a new tab. Don't know the key? Use
+`↑`/`↓` to browse and `Enter` to open the highlighted one. Press `/` to
+fuzzy-search your whole bookmark list, `s` to search the web, or `Tab` to switch
+between your browser's currently open tabs.
 
 ```
 ▌ bml  launcher
@@ -13,7 +14,7 @@ browser's currently open tabs.
    n   Hacker News   news
    m   Gmail         work
 
-  Shift+key  new tab   ·   /  bookmarks   ·   s  search   ·   ⇥  tabs   ·   q  quit
+  ↑↓  browse   ·   ↵  open   ·   Shift+key  new tab   ·   /  bookmarks   ·   s  search   ·   ⇥  tabs   ·   q  quit
 ```
 
 ## Tab mode
