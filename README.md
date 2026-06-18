@@ -74,6 +74,10 @@ or `$BML_CONFIG`; `$XDG_CONFIG_HOME` is honored) holding two hand-edited TOML fi
 
 Edit them with `bml edit` (bookmarks) and `bml edit --settings` (config.toml).
 
+A third file, **`history.toml`**, is written automatically to record which
+bookmarks you pick in bookmarks mode (see "Bookmarks mode" below). It is
+machine-maintained — never hand-edit it; reset it with `bml history clear`.
+
 `bookmarks.toml`:
 
 ```toml
@@ -143,6 +147,13 @@ such a key would be unreachable, and is rejected when the config loads.
 Fuzzy-matches **name + url + tags**. Type to filter, `↑`/`↓` (or `Ctrl-n`/`Ctrl-p`)
 to move, `Enter` to focus/open, `Esc` to go back.
 
+Results learn from use. Each pick is remembered against the query you typed, so
+the bookmarks you habitually choose float toward the top — pick the 4th result
+for `en` a few times and it becomes the first result for `en`. With no query, the
+list is ordered by your most-used bookmarks overall. Recent picks weigh more than
+old ones, so habits adapt over time. Run `bml history clear` to forget everything
+learned.
+
 ### Search mode — `s`
 
 Type a free-text query and search the web. `Enter` searches with the **primary
@@ -173,6 +184,7 @@ bml -n github.com     # force a new tab
 bml -n wt             # force a new tab for a keyed bookmark
 bml edit              # open bookmarks.toml in $EDITOR
 bml edit --settings   # open config.toml (browser, search engines, groups)
+bml history clear     # forget learned bookmark ranking
 ```
 
 A 1–3 character argument with no `.` is a **key sequence**; an argument with a

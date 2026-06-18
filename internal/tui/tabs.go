@@ -8,6 +8,7 @@ import (
 
 	"bml/internal/browser"
 	"bml/internal/config"
+	"bml/internal/history"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -37,6 +38,7 @@ type Tabs struct {
 	groups   []config.Group
 	showTags bool
 	search   config.Search
+	history  *history.History
 
 	input         textinput.Model
 	tabs          []browser.Tab
@@ -52,7 +54,7 @@ type Tabs struct {
 
 // NewTabs builds the tab-mode model. The lister enumerates open tabs; the browser
 // focuses the chosen one. Both are carried because focusing reuses OpenOrFocus.
-func NewTabs(b browser.Browser, lister browser.TabLister, bookmarks []config.Bookmark, groups []config.Group, showTags bool, search config.Search) Tabs {
+func NewTabs(b browser.Browser, lister browser.TabLister, bookmarks []config.Bookmark, groups []config.Group, showTags bool, search config.Search, hist *history.History) Tabs {
 	in := textinput.New()
 	in.Placeholder = "filter tabs…"
 	in.Prompt = ""
@@ -65,6 +67,7 @@ func NewTabs(b browser.Browser, lister browser.TabLister, bookmarks []config.Boo
 		groups:   groups,
 		showTags: showTags,
 		search:   search,
+		history:  hist,
 		input:    in,
 		loading:  true,
 	}
@@ -112,7 +115,7 @@ func (m Tabs) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case tea.KeyEsc:
 			// Back to leader mode, carrying the known size (no resize needed).
-			leader := NewLeader(m.browser, m.all, m.groups, m.showTags, m.search)
+			leader := NewLeader(m.browser, m.all, m.groups, m.showTags, m.search, m.history)
 			leader.width, leader.height = m.width, m.height
 			return leader, nil
 		case tea.KeyEnter:

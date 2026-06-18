@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"bml/internal/config"
+	"bml/internal/history"
 )
 
 // Result is one ranked search hit. NameMatch / URLMatch hold the matched rune
@@ -37,17 +38,29 @@ const (
 	bonusURL  = 1000
 )
 
-// Filter ranks bookmarks against a query over name, url, and tags. An empty
-// query returns every bookmark in original order (no highlight). Results are
-// ordered by match tier first (prefix > word > substring > scatter), then by
-// field (name > tag > url), then by an earlier/shorter-match bonus, then name.
-func Filter(bms []config.Bookmark, query string) []Result {
+// Filter ranks bookmarks against a query over name, url, and tags. An optional
+// History adds a learned-ranking boost on top of raw match relevance (nil/absent
+// = pure matching, the original behavior). Results are ordered by match tier
+// first (prefix > word > substring > scatter), then by field (name > tag > url),
+// then by an earlier/shorter-match bonus and the learned boost, then name. An
+// empty query returns every bookmark ordered by global frecency (most-used
+// first), original order breaking ties.
+func Filter(bms []config.Bookmark, query string, hist ...*history.History) []Result {
+	var h *history.History
+	if len(hist) > 0 {
+		h = hist[0]
+	}
 	q := strings.ToLower(strings.TrimSpace(query))
+	scores := h.Scores(q) // url → learned boost; nil-safe, "" query → global only
+
 	if q == "" {
 		out := make([]Result, len(bms))
 		for i, b := range bms {
 			out[i] = Result{Bookmark: b}
 		}
+		sort.SliceStable(out, func(i, j int) bool {
+			return scores[out[i].Bookmark.URL] > scores[out[j].Bookmark.URL]
+		})
 		return out
 	}
 	qr := []rune(q)
@@ -99,7 +112,7 @@ func Filter(bms []config.Bookmark, query string) []Result {
 		if fine < 0 {
 			fine = 0
 		}
-		score := bestTier*10000 + fieldBonus + fine
+		score := bestTier*10000 + fieldBonus + fine + int(scores[b.URL])
 
 		var nm []int
 		if nameOK {

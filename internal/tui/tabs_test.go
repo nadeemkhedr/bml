@@ -22,7 +22,7 @@ func sampleTabs() []browser.Tab {
 // the async load (as if tabsLoadedMsg had arrived).
 func newTabs(tabs []browser.Tab) (Tabs, *browser.Fake) {
 	fake := &browser.Fake{Tabs: tabs}
-	m := NewTabs(fake, fake, corpus(), nil, true, config.DefaultSearch())
+	m := NewTabs(fake, fake, corpus(), nil, true, config.DefaultSearch(), nil)
 	next, _ := m.Update(tabsLoadedMsg{tabs: tabs})
 	return next.(Tabs), fake
 }
@@ -118,7 +118,7 @@ func TestTabs_CtrlCQuits(t *testing.T) {
 
 func TestTabs_LoadingState(t *testing.T) {
 	fake := &browser.Fake{Tabs: sampleTabs()}
-	m := NewTabs(fake, fake, corpus(), nil, true, config.DefaultSearch())
+	m := NewTabs(fake, fake, corpus(), nil, true, config.DefaultSearch(), nil)
 	m.width, m.height = 80, 24
 	if !strings.Contains(m.View(), "loading tabs…") {
 		t.Error("before load, the view should show a loading state")
@@ -127,7 +127,7 @@ func TestTabs_LoadingState(t *testing.T) {
 
 func TestTabs_NotRunningState(t *testing.T) {
 	fake := &browser.Fake{TabsErr: browser.ErrBrowserNotRunning}
-	m := NewTabs(fake, fake, corpus(), nil, true, config.DefaultSearch())
+	m := NewTabs(fake, fake, corpus(), nil, true, config.DefaultSearch(), nil)
 	m.width, m.height = 80, 24
 	next, _ := m.Update(tabsLoadedMsg{err: browser.ErrBrowserNotRunning})
 	if !strings.Contains(next.(Tabs).View(), "isn't running") {
@@ -137,7 +137,7 @@ func TestTabs_NotRunningState(t *testing.T) {
 
 func TestTabs_ZeroTabsState(t *testing.T) {
 	fake := &browser.Fake{}
-	m := NewTabs(fake, fake, corpus(), nil, true, config.DefaultSearch())
+	m := NewTabs(fake, fake, corpus(), nil, true, config.DefaultSearch(), nil)
 	m.width, m.height = 80, 24
 	next, _ := m.Update(tabsLoadedMsg{tabs: nil})
 	if !strings.Contains(next.(Tabs).View(), "no open tabs") {
@@ -147,7 +147,7 @@ func TestTabs_ZeroTabsState(t *testing.T) {
 
 func TestTabs_AutomationDeniedState(t *testing.T) {
 	fake := &browser.Fake{TabsErr: browser.ErrAutomationDenied}
-	m := NewTabs(fake, fake, corpus(), nil, true, config.DefaultSearch())
+	m := NewTabs(fake, fake, corpus(), nil, true, config.DefaultSearch(), nil)
 	m.width, m.height = 80, 24
 	next, _ := m.Update(tabsLoadedMsg{err: browser.ErrAutomationDenied})
 	// The full guidance is long; on an 80-col terminal frame truncates the tail,

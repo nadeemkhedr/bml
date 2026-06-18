@@ -143,7 +143,7 @@ func TestLeader_ScrollKeepsSelectionVisible(t *testing.T) {
 	for _, k := range []string{"a", "b", "c", "d", "e", "f", "g", "h"} {
 		bms = append(bms, config.Bookmark{Key: k, Name: "Name " + k, URL: "https://" + k + ".example"})
 	}
-	m := NewLeader(fake, bms, nil, false, config.DefaultSearch())
+	m := NewLeader(fake, bms, nil, false, config.DefaultSearch(), nil)
 	// A short screen: header(2)+footer(2) = 4 chrome, so only a few body lines fit.
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 9})
 	m = next.(Leader)

@@ -5,6 +5,7 @@ import (
 
 	"bml/internal/browser"
 	"bml/internal/config"
+	"bml/internal/history"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,8 +25,9 @@ type Search struct {
 	browser       browser.Browser
 	all           []config.Bookmark
 	groups        []config.Group
-	showTags      bool          // carried so returning to leader preserves the setting
-	search        config.Search // carried so returning to leader preserves search-mode engines
+	showTags      bool             // carried so returning to leader preserves the setting
+	search        config.Search    // carried so returning to leader preserves search-mode engines
+	history       *history.History // learned ranking; records selections and ranks results
 	input         textinput.Model
 	results       []Result
 	cursor        int
@@ -36,14 +38,14 @@ type Search struct {
 }
 
 // NewSearch builds the bookmarks-mode model over the full bookmark list.
-func NewSearch(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool, search config.Search) Search {
+func NewSearch(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool, search config.Search, hist *history.History) Search {
 	in := textinput.New()
 	in.Placeholder = "search bookmarks…"
 	in.Prompt = ""
 	in.Focus()
 
-	m := Search{browser: b, all: bookmarks, groups: groups, showTags: showTags, search: search, input: in}
-	m.results = Filter(bookmarks, "")
+	m := Search{browser: b, all: bookmarks, groups: groups, showTags: showTags, search: search, history: hist, input: in}
+	m.results = Filter(bookmarks, "", hist)
 	return m
 }
 
@@ -71,12 +73,17 @@ func (m Search) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case tea.KeyEsc:
 			// Back to leader mode, carrying the known size (no resize needed).
-			leader := NewLeader(m.browser, m.all, m.groups, m.showTags, m.search)
+			leader := NewLeader(m.browser, m.all, m.groups, m.showTags, m.search, m.history)
 			leader.width, leader.height = m.width, m.height
 			return leader, nil
 		case tea.KeyEnter:
 			if len(m.results) > 0 {
-				return m, act(m.browser, m.results[m.cursor].Bookmark.URL, false)
+				url := m.results[m.cursor].Bookmark.URL
+				// Teach learned ranking, then act. The history write is best-effort:
+				// a failure to persist must never stop the bookmark from opening.
+				m.history.Record(m.input.Value(), url)
+				_ = m.history.Save()
+				return m, act(m.browser, url, false)
 			}
 			return m, nil
 		case tea.KeyUp, tea.KeyCtrlP:
@@ -90,7 +97,7 @@ func (m Search) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Anything else edits the query.
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
-		m.results = Filter(m.all, m.input.Value())
+		m.results = Filter(m.all, m.input.Value(), m.history)
 		m.clamp()
 		return m, cmd
 	}

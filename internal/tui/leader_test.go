@@ -20,7 +20,7 @@ func bookmarks() []config.Bookmark {
 
 func newModel() (Leader, *browser.Fake) {
 	fake := &browser.Fake{}
-	return NewLeader(fake, bookmarks(), nil, true, config.DefaultSearch()), fake
+	return NewLeader(fake, bookmarks(), nil, true, config.DefaultSearch(), nil), fake
 }
 
 // runes builds a KeyMsg for typed characters.
@@ -115,7 +115,7 @@ func TestLeader_QuitKeys(t *testing.T) {
 func TestLeader_ShowTagsTogglesTagDisplay(t *testing.T) {
 	bms := []config.Bookmark{{Key: "g", Name: "GitHub", URL: "https://github.com", Tags: []string{"devtag"}}}
 	sized := func(showTags bool) string {
-		m := NewLeader(&browser.Fake{}, bms, nil, showTags, config.DefaultSearch())
+		m := NewLeader(&browser.Fake{}, bms, nil, showTags, config.DefaultSearch(), nil)
 		next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 		return next.(Leader).View()
 	}
@@ -131,7 +131,7 @@ func TestLeader_ShowTagsTogglesTagDisplay(t *testing.T) {
 
 func TestLeader_BoundQuitKeyActsInsteadOfQuitting(t *testing.T) {
 	fake := &browser.Fake{}
-	m := NewLeader(fake, []config.Bookmark{{Key: "q", Name: "Queue", URL: "https://q.example"}}, nil, true, config.DefaultSearch())
+	m := NewLeader(fake, []config.Bookmark{{Key: "q", Name: "Queue", URL: "https://q.example"}}, nil, true, config.DefaultSearch(), nil)
 	_, msg := press(t, m, runes("q"))
 	if _, ok := msg.(actedMsg); !ok {
 		t.Errorf("a bookmark bound to q should act, not quit; got %#v", msg)

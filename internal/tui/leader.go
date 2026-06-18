@@ -10,6 +10,7 @@ import (
 
 	"bml/internal/browser"
 	"bml/internal/config"
+	"bml/internal/history"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -39,7 +40,8 @@ type Leader struct {
 	all           []config.Bookmark // full list, handed to bookmarks/search mode
 	groups        []config.Group
 	showTags      bool
-	search        config.Search // resolved engines, handed to search mode
+	search        config.Search    // resolved engines, handed to search mode
+	history       *history.History // learned ranking, handed to bookmarks mode
 	favorites     []favorite
 	byKey         map[string]favorite
 	groupName     map[string]string
@@ -55,13 +57,14 @@ type Leader struct {
 // NewLeader builds the leader model from the bookmark list (keyed bookmarks
 // become navigable favorites), the optional group labels, whether to show tags,
 // and the resolved search-engine config.
-func NewLeader(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool, search config.Search) Leader {
+func NewLeader(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool, search config.Search, hist *history.History) Leader {
 	m := Leader{
 		browser:   b,
 		all:       bookmarks,
 		groups:    groups,
 		showTags:  showTags,
 		search:    search,
+		history:   hist,
 		byKey:     make(map[string]favorite),
 		groupName: make(map[string]string),
 	}
@@ -162,12 +165,12 @@ func (m Leader) handleRune(s string) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		case "/":
-			search := NewSearch(m.browser, m.all, m.groups, m.showTags, m.search)
+			search := NewSearch(m.browser, m.all, m.groups, m.showTags, m.search, m.history)
 			search.width, search.height = m.width, m.height // bubbletea won't resend size on a model swap
 			search.clamp()
 			return search, search.Init()
 		case "s":
-			web := NewWebSearch(m.browser, m.all, m.groups, m.showTags, m.search)
+			web := NewWebSearch(m.browser, m.all, m.groups, m.showTags, m.search, m.history)
 			web.width, web.height = m.width, m.height // bubbletea won't resend size on a model swap
 			return web, web.Init()
 		}
@@ -186,7 +189,7 @@ func (m Leader) enterTabs() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	tabs := NewTabs(m.browser, lister, m.all, m.groups, m.showTags, m.search)
+	tabs := NewTabs(m.browser, lister, m.all, m.groups, m.showTags, m.search, m.history)
 	tabs.width, tabs.height = m.width, m.height // bubbletea won't resend size on a model swap
 	tabs.clamp()
 	return tabs, tabs.Init()
@@ -459,8 +462,8 @@ type errer interface{ Err() error }
 
 // RunLeader runs the interactive program (starting in leader mode) and returns
 // any error from acting on a bookmark.
-func RunLeader(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool, search config.Search) error {
-	final, err := tea.NewProgram(NewLeader(b, bookmarks, groups, showTags, search), tea.WithAltScreen()).Run()
+func RunLeader(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool, search config.Search, hist *history.History) error {
+	final, err := tea.NewProgram(NewLeader(b, bookmarks, groups, showTags, search, hist), tea.WithAltScreen()).Run()
 	if err != nil {
 		return err
 	}

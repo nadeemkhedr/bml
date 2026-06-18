@@ -6,6 +6,7 @@ import (
 
 	"bml/internal/browser"
 	"bml/internal/config"
+	"bml/internal/history"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -25,6 +26,7 @@ type WebSearch struct {
 	groups   []config.Group
 	showTags bool
 	search   config.Search
+	history  *history.History
 
 	input         textinput.Model
 	width, height int
@@ -33,7 +35,7 @@ type WebSearch struct {
 }
 
 // NewWebSearch builds the search-mode model from the resolved engine config.
-func NewWebSearch(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool, search config.Search) WebSearch {
+func NewWebSearch(b browser.Browser, bookmarks []config.Bookmark, groups []config.Group, showTags bool, search config.Search, hist *history.History) WebSearch {
 	in := textinput.New()
 	in.Placeholder = "search the web…"
 	in.Prompt = ""
@@ -45,6 +47,7 @@ func NewWebSearch(b browser.Browser, bookmarks []config.Bookmark, groups []confi
 		groups:   groups,
 		showTags: showTags,
 		search:   search,
+		history:  hist,
 		input:    in,
 	}
 }
@@ -72,7 +75,7 @@ func (m WebSearch) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case tea.KeyEsc:
 			// Back to leader mode, carrying the known size (no resize needed).
-			leader := NewLeader(m.browser, m.all, m.groups, m.showTags, m.search)
+			leader := NewLeader(m.browser, m.all, m.groups, m.showTags, m.search, m.history)
 			leader.width, leader.height = m.width, m.height
 			return leader, nil
 		case tea.KeyEnter:
