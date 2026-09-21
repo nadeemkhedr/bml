@@ -109,14 +109,45 @@ The two **search engine** slots bound in **search mode**: the **primary engine**
 (Enter — the configurable "default search engine") and the **secondary engine**
 (Tab — defaults to `duckduckgo_lucky`). Both are configurable by name.
 
+### Browse mode
+A mode entered from leader mode (via `.`) that behaves like a browser's address
+bar: the user types an **address** or a **search term**, and Enter either
+navigates to it or searches. The input is treated as a URL when it has no spaces
+and looks like a host (contains a `.`, an explicit scheme, or is `localhost`);
+otherwise it is a **query** sent to the **primary engine**. A URL navigation
+**focuses-or-opens** (a scheme defaulting to `https://`); a search always opens a
+new tab.
+
+While typing, an **autocomplete** list offers, in priority order: (1) **bookmark
+URLs** whose host (scheme- and `www.`-stripped) starts with the typed text — a
+literal prefix match, not the fuzzy match of bookmarks mode; then (2) entries
+from the **browser history** by the same prefix. Arrow keys move a cursor whose
+row 0 is the primary action and rows 1.. are suggestions; Enter acts on the
+selected row; Tab completes the input to the selected suggestion. The trigger
+character `.` is reserved from the bookmark **keyspace**, like `s`.
+_Avoid_: calling it URL mode or omnibox; the entity is "browse mode".
+
+### Browser history (visit history)
+The configured browser's own record of visited URLs, read to personalize
+**browse mode** autocomplete — so suggestions are the sites the user actually
+goes to, not a generic global ranking. Each entry is a **visit** (`{url, title,
+typed_count, visit_count}`); they are ranked by `typed_count` (how often the user
+typed the address — the strongest address-bar signal) then `visit_count`. It is
+read locally and read-only from the Chromium **History** SQLite file via the
+system `sqlite3` in immutable mode (no file copy, no lock contention, no CGO
+driver), exposed as an optional **browser backend** capability (`HistoryLister`,
+like **tab listing**) and loaded asynchronously on mode entry. Distinct from a
+**bookmark** (a stored, curated URL) and from **learned ranking** (bml's own
+in-app usage signal): browser history is the browser's data, not bml's.
+
 ### Act on a URL (open vs focus)
 Taking action on a URL either **focuses** an already-open browser tab or
 **opens** a new tab. "Focus" finds an existing tab by **substring match**
 (scheme-insensitive) on the tab's URL; if none matches, a new tab opens.
 A "force new tab" path (uppercase final key, or `-n/--new-tab`) skips the match
-and always opens. This single routine backs leader mode, search mode, and the
-`bml <arg>` CLI path. The actual automation is delegated to a **browser
-backend**.
+and always opens. This single routine backs leader mode, search mode, browse
+mode, and the `bml <arg>` CLI path. The actual automation is delegated to a
+**browser backend**.
 
 ### Browser backend
 A pluggable implementation of "act on a URL" for a specific platform + browser,

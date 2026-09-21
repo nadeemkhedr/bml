@@ -115,6 +115,15 @@ func TestLoad_SPrefixedBookmarkKeyReserved(t *testing.T) {
 	}
 }
 
+func TestLoad_DotPrefixedBookmarkKeyReserved(t *testing.T) {
+	for _, key := range []string{".", ".g"} {
+		_, err := Load(bookmarksDir(t, "[[bookmark]]\nkey = \""+key+"\"\nname = \"X\"\nurl = \"https://x.com\"\n"))
+		if err == nil || !strings.Contains(err.Error(), "reserved") {
+			t.Errorf("key %q: err = %v, want a reserved-for-browse error", key, err)
+		}
+	}
+}
+
 func TestLoad_SPrefixedGroupKeyReserved(t *testing.T) {
 	_, err := Load(dirWith(t, "[[group]]\nkey = \"s\"\nname = \"Stuff\"\n", `
 [[bookmark]]
