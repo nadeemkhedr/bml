@@ -192,8 +192,8 @@ func newConfig(bookmarks []Bookmark, groups []Group) (*Config, error) {
 }
 
 // validateKey checks a leader key/prefix: 1..max runes, no whitespace, and not
-// starting with "s" (reserved at the top level for entering search mode, so any
-// "s…" key would be unreachable).
+// starting with "s" or "." (reserved at the top level for entering search mode
+// and browse mode respectively, so any such key would be unreachable).
 func validateKey(owner, key string, max int) error {
 	n := utf8.RuneCountInString(key)
 	if n < 1 || n > max {
@@ -204,6 +204,9 @@ func validateKey(owner, key string, max int) error {
 	}
 	if strings.HasPrefix(strings.ToLower(key), "s") {
 		return fmt.Errorf("%s: key %q may not start with \"s\" — that key is reserved for search mode", owner, key)
+	}
+	if strings.HasPrefix(key, ".") {
+		return fmt.Errorf("%s: key %q may not start with \".\" — that key is reserved for browse mode", owner, key)
 	}
 	return nil
 }
@@ -311,7 +314,7 @@ const starterBookmarks = `# bml bookmarks — edit this file, then run ` + "`bml
 #
 # Multi-character keys form groups: with key = "wt", pressing "w" opens the group
 # and "t" acts. A key can't be both a bookmark and a group prefix. A key may not
-# start with "s" — that key is reserved for search mode (press "s" in the launcher).
+# start with "s" (reserved for search mode) or "." (reserved for browse mode).
 #
 # Settings (browser, search engines, group labels) live next to this file in
 # config.toml.

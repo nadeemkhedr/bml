@@ -1,6 +1,7 @@
 // Package tui holds bml's interactive Bubble Tea models: leader mode, bookmarks
-// mode (the "/" fuzzy finder), search mode (the "s" web search), and tab mode
-// (the Tab-key switcher over the browser's open tabs).
+// mode (the "/" fuzzy finder), search mode (the "s" web search), browse mode
+// (the "." address bar), and tab mode (the Tab-key switcher over the browser's
+// open tabs).
 package tui
 
 import (
@@ -173,6 +174,11 @@ func (m Leader) handleRune(s string) (tea.Model, tea.Cmd) {
 			web := NewWebSearch(m.browser, m.all, m.groups, m.showTags, m.search, m.history)
 			web.width, web.height = m.width, m.height // bubbletea won't resend size on a model swap
 			return web, web.Init()
+		case ".":
+			browse := NewBrowse(m.browser, m.all, m.groups, m.showTags, m.search, m.history)
+			browse.width, browse.height = m.width, m.height // bubbletea won't resend size on a model swap
+			browse.clamp()
+			return browse, browse.Init()
 		}
 	}
 	return m, nil // stray key inside a group — ignore
@@ -451,7 +457,7 @@ func (m Leader) renderBody() (lines []string, selLine int) {
 
 func (m Leader) footer() string {
 	if m.prefix == "" {
-		return "  ↑↓  browse   ·   ↵  open   ·   Shift+key  new tab   ·   /  bookmarks   ·   s  search   ·   ⇥  tabs   ·   q  quit"
+		return "  ↑↓  browse   ·   ↵  open   ·   Shift+key  new tab   ·   /  bookmarks   ·   s  search   ·   .  url   ·   ⇥  tabs   ·   q  quit"
 	}
 	return "  ↑↓  browse   ·   ↵  open   ·   Shift+key  new tab   ·   ⌫  back   ·   esc  top"
 }

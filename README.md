@@ -121,7 +121,7 @@ name = "Work"
 - A bookmark needs a **name** and **url**.
 - An optional **key** (1–3 characters) binds it to the launcher. Multi-character
   keys form **groups**: `wt` means press `w` (opens the Work group) then `t`. A
-  key may not start with `s` (reserved for search mode).
+  key may not start with `s` (reserved for search mode) or `.` (browse mode).
 - Keys are **prefix-free** — a key can't be both a bookmark and a group prefix
   (no `w` *and* `wt`). Duplicate or conflicting keys are rejected on load.
 
@@ -137,10 +137,12 @@ name = "Work"
 | `Backspace`    | Go up one group level                             |
 | `/`            | Enter bookmarks mode (fuzzy-find your bookmarks)  |
 | `s`            | Enter search mode (search the web)                |
+| `.`            | Enter browse mode (type a URL or search term)     |
 | `q` / `Esc` / `Ctrl-C` | Quit (`Esc` first leaves the current group) |
 
-Because `s` enters search mode, no bookmark or group key may begin with `s` —
-such a key would be unreachable, and is rejected when the config loads.
+Because `s` enters search mode and `.` enters browse mode, no bookmark or group
+key may begin with `s` or `.` — such a key would be unreachable, and is rejected
+when the config loads.
 
 ### Bookmarks mode — `/`
 
@@ -173,6 +175,35 @@ secondary_engine = "duckduckgo_lucky"  # Tab
 [search.engines]
 kagi = "https://kagi.com/search?q={{input}}"
 ```
+
+### Browse mode — `.`
+
+A browser-style address bar. Type a **URL** to go straight to it, or a **search
+term** to search — bml decides which by shape (a dotted host like `example.com`
+or `localhost:3000` navigates; `golang generics` searches). A URL with no scheme
+gets `https://`. `Enter` acts; navigating focuses an existing tab if you have one
+open, a search opens a new tab; `Esc` goes back.
+
+As you type, an autocomplete list suggests, in order:
+
+1. **Your bookmarks** whose URL starts with what you typed (a literal prefix
+   match on the host, ignoring `https://` and `www.`).
+2. **Your browser history** by the same prefix, ranked by how often you've
+   *typed* the address (then how often you've visited it) — the same signal a
+   browser's address bar uses, so suggestions are the sites *you* actually go to.
+   Each history (and bookmark) suggestion shows its **page title** beside the URL
+   for quick recognition.
+
+`↑`/`↓` move the selection (row 0 is "act on exactly what I typed"), `Enter` opens
+the highlighted row, and `Tab` completes your input to the highlighted suggestion.
+
+History comes from the configured browser's own profile (the `Default` profile's
+`History` database). It is read **locally and read-only** — through the system
+`sqlite3` in immutable mode, so there's no file copy, no lock contention while the
+browser is running, and nothing ever leaves your machine. The read happens in the
+background as browse mode opens, so it never delays entry. If the browser keeps
+history elsewhere or `sqlite3` isn't available, browse mode simply falls back to
+bookmark suggestions only.
 
 ### Command line
 

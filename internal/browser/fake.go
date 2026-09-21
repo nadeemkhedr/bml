@@ -9,7 +9,8 @@ type Call struct {
 // Fake is a Browser test double that records calls instead of touching a real
 // browser. It is the spine of bml's test suite — CLI and TUI tests inject it to
 // assert which URL was acted on and whether a new tab was forced. It also
-// implements TabLister so tab-mode tests can drive the model with canned tabs.
+// implements TabLister and HistoryLister so tab- and browse-mode tests can drive
+// the models with canned tabs and history.
 type Fake struct {
 	Calls []Call
 	// Err, if set, is returned from OpenOrFocus to exercise error paths.
@@ -18,6 +19,10 @@ type Fake struct {
 	// exercise the not-running / automation-denied paths.
 	Tabs    []Tab
 	TabsErr error
+	// Visits is returned from ListHistory; HistoryErr, if set, is returned
+	// instead to exercise the fall-back-to-bookmarks path.
+	Visits     []Visit
+	HistoryErr error
 }
 
 // OpenOrFocus implements Browser.
@@ -29,6 +34,11 @@ func (f *Fake) OpenOrFocus(url string, forceNew bool) error {
 // ListTabs implements TabLister.
 func (f *Fake) ListTabs() ([]Tab, error) {
 	return f.Tabs, f.TabsErr
+}
+
+// ListHistory implements HistoryLister.
+func (f *Fake) ListHistory() ([]Visit, error) {
+	return f.Visits, f.HistoryErr
 }
 
 // Last returns the most recent call and whether any call was recorded.
